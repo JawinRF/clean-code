@@ -1,0 +1,17 @@
+# Reference material and private planning documents
+/References/
+/Docs/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# TypeScript and React
+node_modules/
+dist/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]

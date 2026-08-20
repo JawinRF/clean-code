@@ -1,0 +1,11 @@
+{
+  "name": "clean-code",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "pnpm --dir apps/web dev",
+    "build:web": "pnpm --dir apps/web build"
+  },
+  "packageManager": "pnpm@11.21.0"
+}

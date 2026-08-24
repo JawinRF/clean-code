@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import psycopg
 from psycopg import Connection
 from sqlalchemy import URL, create_engine
@@ -5,7 +7,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.settings import settings
-
 
 DATABASE_URL = URL.create(
     drivername="postgresql+psycopg",
@@ -38,3 +39,8 @@ def connect_to_database() -> Connection:
         password=settings.postgres_password.get_secret_value(),
         connect_timeout=3,
     )
+
+
+def get_database_session() -> Iterator[Session]:
+    with SessionFactory() as session:
+        yield session

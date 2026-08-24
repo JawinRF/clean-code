@@ -1,4 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+} from 'react';
 
 type ReadyResponse = {
   status: string;
@@ -61,7 +66,7 @@ function App() {
     }
   }
 
-  async function loadProjects() {
+  const loadProjects = useCallback(async () => {
     setProjectsStatus('Loading projects...');
 
     const controller = new AbortController();
@@ -97,7 +102,11 @@ function App() {
     } finally {
       window.clearTimeout(timeoutId);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

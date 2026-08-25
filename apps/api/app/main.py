@@ -8,10 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import connect_to_database, get_database_session
-from app.models import AgentSession, Project, Workspace
+from app.models import AgentSession, Message, Project, Workspace
 from app.schemas import (
     AgentSessionCreate,
     AgentSessionResponse,
+    MessageCreate,
+    MessageResponse,
     ProjectCreate,
     ProjectResponse,
     WorkspaceCreate,
@@ -261,3 +263,41 @@ def get_agent_session(
         )
 
     return agent_session
+
+
+@app.post(
+    "/api/v1/sessions/{session_id}/messages",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_user_message(
+    session_id: UUID,
+    payload: MessageCreate,
+    session: DatabaseSession,
+) -> Message:
+    agent_session = session.get(AgentSession, session_id)
+
+    if agent_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent session not found.",
+        )
+
+    message = Message(
+        session_id=session_id,
+        role="user",
+        content={
+            "parts": [
+                {
+                    "type": "text",
+                    "text": payload.text,
+                },
+            ],
+        },
+    )
+
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+
+    return message

@@ -242,3 +242,22 @@ def create_agent_session(
     session.refresh(agent_session)
 
     return agent_session
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}",
+    response_model=AgentSessionResponse,
+)
+def get_agent_session(
+    session_id: UUID,
+    session: DatabaseSession,
+) -> AgentSession:
+    agent_session = session.get(AgentSession, session_id)
+
+    if agent_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent session not found.",
+        )
+
+    return agent_session

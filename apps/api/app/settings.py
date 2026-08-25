@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_password: SecretStr
 
+    anthropic_api_key: SecretStr | None = None
+
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",

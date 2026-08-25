@@ -189,6 +189,31 @@ def create_workspace(
     return workspace
 
 
+@app.get(
+    "/api/v1/workspaces/{workspace_id}/sessions",
+    response_model=list[AgentSessionResponse],
+)
+def list_agent_sessions(
+    workspace_id: UUID,
+    session: DatabaseSession,
+) -> list[AgentSession]:
+    workspace = session.get(Workspace, workspace_id)
+
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found.",
+        )
+
+    statement = (
+        select(AgentSession)
+        .where(AgentSession.workspace_id == workspace_id)
+        .order_by(AgentSession.created_at.desc())
+    )
+
+    return list(session.scalars(statement))
+
+
 @app.post(
     "/api/v1/workspaces/{workspace_id}/sessions",
     response_model=AgentSessionResponse,

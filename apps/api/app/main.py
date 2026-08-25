@@ -8,8 +8,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import connect_to_database, get_database_session
-from app.models import Project, Workspace
+from app.models import AgentSession, Project, Workspace
 from app.schemas import (
+    AgentSessionCreate,
+    AgentSessionResponse,
     ProjectCreate,
     ProjectResponse,
     WorkspaceCreate,
@@ -185,3 +187,33 @@ def create_workspace(
     session.refresh(workspace)
 
     return workspace
+
+
+@app.post(
+    "/api/v1/workspaces/{workspace_id}/sessions",
+    response_model=AgentSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_agent_session(
+    workspace_id: UUID,
+    payload: AgentSessionCreate,
+    session: DatabaseSession,
+) -> AgentSession:
+    workspace = session.get(Workspace, workspace_id)
+
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found.",
+        )
+
+    agent_session = AgentSession(
+        workspace_id=workspace_id,
+        title=payload.title,
+    )
+
+    session.add(agent_session)
+    session.commit()
+    session.refresh(agent_session)
+
+    return agent_session

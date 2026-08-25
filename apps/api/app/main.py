@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -7,8 +8,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import connect_to_database, get_database_session
-from app.models import Project
-from app.schemas import ProjectCreate, ProjectResponse
+from app.models import Project, Workspace
+from app.schemas import (
+    ProjectCreate,
+    ProjectResponse,
+    WorkspaceCreate,
+    WorkspaceResponse,
+)
+from app.services import (
+    InvalidWorkspaceRootError,
+    resolve_workspace_root,
+)
 
 
 DatabaseSession = Annotated[Session, Depends(get_database_session)]
@@ -100,3 +110,53 @@ def create_project(
     session.refresh(project)
 
     return project
+
+
+@app.post(
+    "/api/v1/projects/{project_id}/workspaces",
+    response_model=WorkspaceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workspace(
+    project_id: UUID,
+    payload: WorkspaceCreate,
+    session: DatabaseSession,
+) -> Workspace:
+    project = session.get(Project, project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+
+    try:
+        root_path = resolve_workspace_root(payload.root_path)
+    except InvalidWorkspaceRootError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+
+    workspace = Workspace(
+        project_id=project_id,
+        name=payload.name,
+        root_path=root_path,
+    )
+
+    session.add(workspace)
+
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A workspace with this name or root path already exists."
+            ),
+        ) from error
+
+    session.refresh(workspace)
+
+    return workspace

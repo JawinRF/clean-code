@@ -265,6 +265,31 @@ def get_agent_session(
     return agent_session
 
 
+@app.get(
+    "/api/v1/sessions/{session_id}/messages",
+    response_model=list[MessageResponse],
+)
+def list_messages(
+    session_id: UUID,
+    session: DatabaseSession,
+) -> list[Message]:
+    agent_session = session.get(AgentSession, session_id)
+
+    if agent_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent session not found.",
+        )
+
+    statement = (
+        select(Message)
+        .where(Message.session_id == session_id)
+        .order_by(Message.created_at.asc())
+    )
+
+    return list(session.scalars(statement))
+
+
 @app.post(
     "/api/v1/sessions/{session_id}/messages",
     response_model=MessageResponse,

@@ -112,6 +112,31 @@ def create_project(
     return project
 
 
+@app.get(
+    "/api/v1/projects/{project_id}/workspaces",
+    response_model=list[WorkspaceResponse],
+)
+def list_workspaces(
+    project_id: UUID,
+    session: DatabaseSession,
+) -> list[Workspace]:
+    project = session.get(Project, project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+
+    statement = (
+        select(Workspace)
+        .where(Workspace.project_id == project_id)
+        .order_by(Workspace.created_at.desc())
+    )
+
+    return list(session.scalars(statement))
+
+
 @app.post(
     "/api/v1/projects/{project_id}/workspaces",
     response_model=WorkspaceResponse,

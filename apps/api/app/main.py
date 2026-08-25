@@ -8,8 +8,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import connect_to_database, get_database_session
-from app.models import AgentSession, Message, Project, Workspace
+from app.models import AgentRun, AgentSession, Message, Project, Workspace
 from app.schemas import (
+    AgentRunCreate,
+    AgentRunResponse,
     AgentSessionCreate,
     AgentSessionResponse,
     MessageCreate,
@@ -21,6 +23,8 @@ from app.schemas import (
 )
 from app.services import (
     InvalidWorkspaceRootError,
+    RunAlreadyFinishedError,
+    request_run_cancellation,
     resolve_workspace_root,
 )
 
@@ -326,3 +330,105 @@ def create_user_message(
     session.refresh(message)
 
     return message
+
+
+@app.post(
+    "/api/v1/sessions/{session_id}/runs",
+    response_model=AgentRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_agent_run(
+    session_id: UUID,
+    payload: AgentRunCreate,
+    session: DatabaseSession,
+) -> AgentRun:
+    agent_session = session.get(AgentSession, session_id)
+
+    if agent_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent session not found.",
+        )
+
+    if payload.trigger_message_id is not None:
+        trigger_message = session.get(
+            Message,
+            payload.trigger_message_id,
+        )
+
+        if (
+            trigger_message is None
+            or trigger_message.session_id != session_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Trigger message not found in this agent session.",
+            )
+
+        if trigger_message.role != "user":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Trigger message must have the user role.",
+            )
+
+    agent_run = AgentRun(
+        session_id=session_id,
+        trigger_message_id=payload.trigger_message_id,
+        model_provider=payload.model_provider,
+        model_name=payload.model_name,
+    )
+
+    session.add(agent_run)
+    session.commit()
+    session.refresh(agent_run)
+
+    return agent_run
+
+
+@app.get(
+    "/api/v1/runs/{run_id}",
+    response_model=AgentRunResponse,
+)
+def get_agent_run(
+    run_id: UUID,
+    session: DatabaseSession,
+) -> AgentRun:
+    agent_run = session.get(AgentRun, run_id)
+
+    if agent_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found.",
+        )
+
+    return agent_run
+
+
+@app.post(
+    "/api/v1/runs/{run_id}/cancel",
+    response_model=AgentRunResponse,
+)
+def cancel_agent_run(
+    run_id: UUID,
+    session: DatabaseSession,
+) -> AgentRun:
+    agent_run = session.get(AgentRun, run_id)
+
+    if agent_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found.",
+        )
+
+    try:
+        request_run_cancellation(agent_run)
+    except RunAlreadyFinishedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent run has already finished.",
+        ) from error
+
+    session.commit()
+    session.refresh(agent_run)
+
+    return agent_run

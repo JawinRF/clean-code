@@ -32,6 +32,7 @@ from app.schemas import (
 from app.services import (
     InvalidWorkspaceRootError,
     RunAlreadyFinishedError,
+    append_run_event,
     request_run_cancellation,
     resolve_workspace_root,
 )
@@ -387,6 +388,19 @@ def create_agent_run(
     )
 
     session.add(agent_run)
+    session.flush()
+
+    append_run_event(
+        session,
+        run_id=agent_run.id,
+        event_type="run.created",
+        payload={
+            "status": agent_run.status,
+            "model_provider": agent_run.model_provider,
+            "model_name": agent_run.model_name,
+        },
+    )
+
     session.commit()
     session.refresh(agent_run)
 

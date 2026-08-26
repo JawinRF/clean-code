@@ -1,3 +1,7 @@
+from app.services.run_execution import (
+    RunCannotStartError,
+    start_agent_run,
+)
 from app.services.run_events import (
     AgentRunNotFoundError,
     append_run_event,
@@ -16,7 +20,9 @@ __all__ = [
     "AgentRunNotFoundError",
     "InvalidWorkspaceRootError",
     "RunAlreadyFinishedError",
+    "RunCannotStartError",
     "append_run_event",
     "request_run_cancellation",
     "resolve_workspace_root",
+    "start_agent_run",
 ]

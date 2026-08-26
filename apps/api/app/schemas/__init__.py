@@ -11,6 +11,7 @@ from app.schemas.message import (
     TextMessagePart,
 )
 from app.schemas.project import ProjectCreate, ProjectResponse
+from app.schemas.run_event import RunEventResponse
 from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "MessageResponse",
     "ProjectCreate",
     "ProjectResponse",
+    "RunEventResponse",
     "RunStatus",
     "TextMessagePart",
     "WorkspaceCreate",

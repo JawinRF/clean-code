@@ -8,7 +8,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import connect_to_database, get_database_session
-from app.models import AgentRun, AgentSession, Message, Project, Workspace
+from app.models import (
+    AgentRun,
+    AgentSession,
+    Message,
+    Project,
+    RunEvent,
+    Workspace,
+)
 from app.schemas import (
     AgentRunCreate,
     AgentRunResponse,
@@ -18,6 +25,7 @@ from app.schemas import (
     MessageResponse,
     ProjectCreate,
     ProjectResponse,
+    RunEventResponse,
     WorkspaceCreate,
     WorkspaceResponse,
 )
@@ -402,6 +410,31 @@ def get_agent_run(
         )
 
     return agent_run
+
+
+@app.get(
+    "/api/v1/runs/{run_id}/events",
+    response_model=list[RunEventResponse],
+)
+def list_run_events(
+    run_id: UUID,
+    session: DatabaseSession,
+) -> list[RunEvent]:
+    agent_run = session.get(AgentRun, run_id)
+
+    if agent_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found.",
+        )
+
+    statement = (
+        select(RunEvent)
+        .where(RunEvent.run_id == run_id)
+        .order_by(RunEvent.sequence.asc())
+    )
+
+    return list(session.scalars(statement))
 
 
 @app.post(

@@ -1,3 +1,11 @@
+from app.services.provider_requests import (
+    UnsupportedMessageRoleError,
+    build_provider_request,
+)
+from app.services.run_context import (
+    RunMessageBoundaryError,
+    load_run_messages,
+)
 from app.services.run_execution import (
     RunCannotStartError,
     start_agent_run,
@@ -21,7 +29,11 @@ __all__ = [
     "InvalidWorkspaceRootError",
     "RunAlreadyFinishedError",
     "RunCannotStartError",
+    "RunMessageBoundaryError",
+    "UnsupportedMessageRoleError",
     "append_run_event",
+    "build_provider_request",
+    "load_run_messages",
     "request_run_cancellation",
     "resolve_workspace_root",
     "start_agent_run",

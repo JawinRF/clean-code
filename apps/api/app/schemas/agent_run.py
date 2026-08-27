@@ -26,6 +26,12 @@ class AgentRunCreate(BaseModel):
     )
 
 
+class AgentRunExecute(BaseModel):
+    max_output_tokens: int = Field(
+        gt=0,
+    )
+
+
 class AgentRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,5 +1,6 @@
 from app.schemas.agent_run import (
     AgentRunCreate,
+    AgentRunExecute,
     AgentRunResponse,
     RunStatus,
 )
@@ -16,6 +17,7 @@ from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse
 
 __all__ = [
     "AgentRunCreate",
+    "AgentRunExecute",
     "AgentRunResponse",
     "AgentSessionCreate",
     "AgentSessionResponse",

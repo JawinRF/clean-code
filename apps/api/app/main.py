@@ -1,8 +1,10 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from app.models import (
 )
 from app.schemas import (
     AgentRunCreate,
+    AgentRunExecute,
     AgentRunResponse,
     AgentSessionCreate,
     AgentSessionResponse,
@@ -30,8 +33,12 @@ from app.schemas import (
     WorkspaceResponse,
 )
 from app.services import (
+    AgentRunNotFoundError,
     InvalidWorkspaceRootError,
     RunAlreadyFinishedError,
+    RunTaskAlreadyActiveError,
+    RunTaskSupervisor,
+    RunTaskSupervisorClosedError,
     append_run_event,
     request_run_cancellation,
     resolve_workspace_root,
@@ -40,9 +47,31 @@ from app.services import (
 
 DatabaseSession = Annotated[Session, Depends(get_database_session)]
 
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    run_task_supervisor = RunTaskSupervisor()
+    application.state.run_task_supervisor = run_task_supervisor
+
+    try:
+        yield
+    finally:
+        await run_task_supervisor.close()
+
+
+def get_run_task_supervisor(request: Request) -> RunTaskSupervisor:
+    return request.app.state.run_task_supervisor
+
+
+RunTasks = Annotated[
+    RunTaskSupervisor,
+    Depends(get_run_task_supervisor),
+]
+
 app = FastAPI(
     title="Clean Code API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 
@@ -452,12 +481,15 @@ def list_run_events(
 
 
 @app.post(
-    "/api/v1/runs/{run_id}/cancel",
+    "/api/v1/runs/{run_id}/execute",
     response_model=AgentRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-def cancel_agent_run(
+async def execute_agent_run(
     run_id: UUID,
+    payload: AgentRunExecute,
     session: DatabaseSession,
+    run_tasks: RunTasks,
 ) -> AgentRun:
     agent_run = session.get(AgentRun, run_id)
 
@@ -467,8 +499,50 @@ def cancel_agent_run(
             detail="Agent run not found.",
         )
 
+    if agent_run.status != "queued":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a queued agent run can start execution.",
+        )
+
     try:
-        request_run_cancellation(agent_run)
+        run_tasks.start(
+            run_id=run_id,
+            max_output_tokens=payload.max_output_tokens,
+        )
+    except RunTaskAlreadyActiveError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent run already has an active execution task.",
+        ) from error
+    except RunTaskSupervisorClosedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Agent run execution is not available.",
+        ) from error
+
+    return agent_run
+
+
+@app.post(
+    "/api/v1/runs/{run_id}/cancel",
+    response_model=AgentRunResponse,
+)
+async def cancel_agent_run(
+    run_id: UUID,
+    session: DatabaseSession,
+    run_tasks: RunTasks,
+) -> AgentRun:
+    try:
+        agent_run = request_run_cancellation(
+            session,
+            run_id=run_id,
+        )
+    except AgentRunNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found.",
+        ) from error
     except RunAlreadyFinishedError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -476,6 +550,6 @@ def cancel_agent_run(
         ) from error
 
     session.commit()
-    session.refresh(agent_run)
+    run_tasks.cancel(run_id)
 
     return agent_run

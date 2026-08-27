@@ -95,6 +95,49 @@ def complete_agent_run(
     return agent_run
 
 
+def cancel_running_agent_run(
+    database_session: Session,
+    *,
+    run_id: UUID,
+) -> AgentRun:
+    agent_run = database_session.scalar(
+        select(AgentRun)
+        .where(AgentRun.id == run_id)
+        .with_for_update()
+    )
+
+    if agent_run is None:
+        raise AgentRunNotFoundError
+
+    if agent_run.status != "running":
+        raise RunCannotFinishError(
+            f'Run with status "{agent_run.status}" cannot be cancelled.'
+        )
+
+    finished_at = datetime.now(UTC)
+    cancel_requested_at = (
+        agent_run.cancel_requested_at or finished_at
+    )
+
+    agent_run.status = "cancelled"
+    agent_run.cancel_requested_at = cancel_requested_at
+    agent_run.finished_at = finished_at
+    database_session.flush()
+
+    append_run_event(
+        database_session,
+        run_id=run_id,
+        event_type="run.cancelled",
+        payload={
+            "status": "cancelled",
+            "cancel_requested_at": cancel_requested_at.isoformat(),
+            "finished_at": finished_at.isoformat(),
+        },
+    )
+
+    return agent_run
+
+
 def fail_agent_run(
     database_session: Session,
     *,

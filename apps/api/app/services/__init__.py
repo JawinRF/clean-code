@@ -9,6 +9,7 @@ from app.services.run_context import (
 from app.services.run_execution import (
     RunCannotFinishError,
     RunCannotStartError,
+    cancel_running_agent_run,
     complete_agent_run,
     fail_agent_run,
     start_agent_run,
@@ -44,6 +45,7 @@ __all__ = [
     "UnsupportedMessageRoleError",
     "append_run_event",
     "build_provider_request",
+    "cancel_running_agent_run",
     "complete_agent_run",
     "execute_text_run",
     "fail_agent_run",

@@ -1,3 +1,4 @@
+from asyncio import CancelledError
 from collections.abc import Callable
 from time import monotonic
 from uuid import UUID
@@ -25,6 +26,7 @@ from app.services.run_context import (
 )
 from app.services.run_events import append_run_event
 from app.services.run_execution import (
+    cancel_running_agent_run,
     complete_agent_run,
     fail_agent_run,
     start_agent_run,
@@ -241,6 +243,14 @@ async def execute_text_run(
         database_session.commit()
 
         return assistant_message
+    except CancelledError:
+        database_session.rollback()
+        cancel_running_agent_run(
+            database_session,
+            run_id=run_id,
+        )
+        database_session.commit()
+        raise
     except Exception as error:
         database_session.rollback()
         error_code, error_message = _safe_failure_details(error)

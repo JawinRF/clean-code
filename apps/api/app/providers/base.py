@@ -45,3 +45,6 @@ class LlmAdapter(Protocol):
         request: ProviderRequest,
     ) -> AsyncIterator[ProviderEvent]:
         ...
+
+    async def close(self) -> None:
+        ...

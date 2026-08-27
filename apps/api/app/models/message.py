@@ -30,6 +30,11 @@ class Message(Base):
             "session_id",
             "created_at",
         ),
+        Index(
+            "ix_messages_run_id_created_at",
+            "run_id",
+            "created_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -44,6 +49,16 @@ class Message(Base):
             ondelete="CASCADE",
         ),
         nullable=False,
+    )
+    run_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "runs.id",
+            name="fk_messages_run_id_runs",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+        nullable=True,
     )
     role: Mapped[str] = mapped_column(
         String(32),

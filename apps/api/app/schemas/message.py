@@ -28,6 +28,7 @@ class MessageResponse(BaseModel):
 
     id: UUID
     session_id: UUID
+    run_id: UUID | None
     role: str
     content: MessageContent
     schema_version: int

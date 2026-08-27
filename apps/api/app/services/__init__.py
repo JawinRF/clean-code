@@ -21,6 +21,11 @@ from app.services.run_lifecycle import (
     RunAlreadyFinishedError,
     request_run_cancellation,
 )
+from app.services.text_run import (
+    ProviderStreamProtocolError,
+    TextRunExecutionError,
+    execute_text_run,
+)
 from app.services.workspace_paths import (
     InvalidWorkspaceRootError,
     resolve_workspace_root,
@@ -30,14 +35,17 @@ from app.services.workspace_paths import (
 __all__ = [
     "AgentRunNotFoundError",
     "InvalidWorkspaceRootError",
+    "ProviderStreamProtocolError",
     "RunAlreadyFinishedError",
     "RunCannotFinishError",
     "RunCannotStartError",
     "RunMessageBoundaryError",
+    "TextRunExecutionError",
     "UnsupportedMessageRoleError",
     "append_run_event",
     "build_provider_request",
     "complete_agent_run",
+    "execute_text_run",
     "fail_agent_run",
     "load_run_messages",
     "request_run_cancellation",

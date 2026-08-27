@@ -22,6 +22,11 @@ from app.services.run_lifecycle import (
     RunAlreadyFinishedError,
     request_run_cancellation,
 )
+from app.services.run_tasks import (
+    RunTaskAlreadyActiveError,
+    RunTaskSupervisor,
+    RunTaskSupervisorClosedError,
+)
 from app.services.text_run import (
     ProviderStreamProtocolError,
     TextRunExecutionError,
@@ -41,6 +46,9 @@ __all__ = [
     "RunCannotFinishError",
     "RunCannotStartError",
     "RunMessageBoundaryError",
+    "RunTaskAlreadyActiveError",
+    "RunTaskSupervisor",
+    "RunTaskSupervisorClosedError",
     "TextRunExecutionError",
     "UnsupportedMessageRoleError",
     "append_run_event",

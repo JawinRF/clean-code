@@ -7,7 +7,10 @@ from app.services.run_context import (
     load_run_messages,
 )
 from app.services.run_execution import (
+    RunCannotFinishError,
     RunCannotStartError,
+    complete_agent_run,
+    fail_agent_run,
     start_agent_run,
 )
 from app.services.run_events import (
@@ -28,11 +31,14 @@ __all__ = [
     "AgentRunNotFoundError",
     "InvalidWorkspaceRootError",
     "RunAlreadyFinishedError",
+    "RunCannotFinishError",
     "RunCannotStartError",
     "RunMessageBoundaryError",
     "UnsupportedMessageRoleError",
     "append_run_event",
     "build_provider_request",
+    "complete_agent_run",
+    "fail_agent_run",
     "load_run_messages",
     "request_run_cancellation",
     "resolve_workspace_root",

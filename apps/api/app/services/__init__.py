@@ -32,6 +32,7 @@ from app.services.text_run import (
     TextRunExecutionError,
     execute_text_run,
 )
+from app.services.tool_execution import execute_tool_call
 from app.services.workspace_paths import (
     InvalidWorkspaceRootError,
     resolve_workspace_root,
@@ -56,6 +57,7 @@ __all__ = [
     "cancel_running_agent_run",
     "complete_agent_run",
     "execute_text_run",
+    "execute_tool_call",
     "fail_agent_run",
     "load_run_messages",
     "request_run_cancellation",

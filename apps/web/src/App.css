@@ -633,6 +633,12 @@
   font-size: 10px;
 }
 
+.generation-state {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
 .message-body > p {
   color: var(--text-secondary);
   font-size: 13px;
@@ -644,6 +650,26 @@
 .transcript-message[data-role='user'] .message-body {
   padding-left: 10px;
   border-left: 2px solid var(--border-strong);
+}
+
+.transcript-message--live .message-body > p {
+  min-height: 21px;
+}
+
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--text-secondary);
+  animation: stream-cursor-pulse 900ms steps(2, end) infinite;
+}
+
+@keyframes stream-cursor-pulse {
+  50% {
+    opacity: 0.2;
+  }
 }
 
 .transcript-status {
@@ -785,6 +811,10 @@
   box-shadow: 0 10px 28px rgb(0 0 0 / 0.2);
 }
 
+.composer:focus-within {
+  border-color: var(--text-muted);
+}
+
 .composer textarea {
   box-sizing: border-box;
   width: 100%;
@@ -821,6 +851,23 @@
   font-size: 11px;
 }
 
+.model-select {
+  max-width: 190px;
+  height: 27px;
+  padding: 0 25px 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.model-select:focus-visible {
+  border-color: var(--border-strong);
+}
+
 .composer-icon-button,
 .send-button {
   display: grid;
@@ -829,6 +876,19 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
+}
+
+.send-button:not(:disabled) {
+  cursor: pointer;
+}
+
+.send-button:not(:disabled):hover {
+  opacity: 0.88;
+}
+
+.send-button--stop {
+  background: var(--danger);
+  color: white;
 }
 
 .composer-icon-button {
@@ -846,7 +906,9 @@
 }
 
 .composer button:disabled,
-.composer textarea:disabled {
+.composer textarea:disabled,
+.composer textarea:read-only,
+.model-select:disabled {
   cursor: not-allowed;
 }
 
@@ -860,6 +922,10 @@
   font-size: 10px;
   line-height: 14px;
   text-align: center;
+}
+
+.composer-note[data-error='true'] {
+  color: var(--danger);
 }
 
 @media (max-width: 760px) {

@@ -1,14 +1,18 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from 'react';
 import {
   getApiJson,
+  postApiJson,
+  type AgentRunResponse,
   type AgentSessionResponse,
   type MessageResponse,
+  type RunEventResponse,
   type WorkspaceResponse,
 } from './api';
 import './App.css';
@@ -32,6 +36,26 @@ type ErrorResponse = {
 
 type StatusTone = 'neutral' | 'working' | 'success' | 'danger';
 
+type ActiveTurn = {
+  runId: string;
+  sessionId: string;
+};
+
+const MODEL_OPTIONS = [
+  {
+    key: 'anthropic:claude-haiku-4-5-20251001',
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    label: 'Claude Haiku 4.5',
+  },
+] as const;
+
+const TERMINAL_RUN_STATUSES = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
 type IconName =
   | 'arrow-up'
   | 'check'
@@ -40,6 +64,7 @@ type IconName =
   | 'message'
   | 'plus'
   | 'refresh'
+  | 'stop'
   | 'terminal';
 
 function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
@@ -51,6 +76,7 @@ function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     message: <path d="M4 5h16v12H8l-4 3z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 8a7 7 0 0 1 11.7-1.9L20 8M4 16l2.2 1.9A7 7 0 0 0 17.9 16" />,
+    stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
     terminal: <path d="m5 7 4 4-4 4M11 16h8" />,
   };
 
@@ -133,6 +159,15 @@ function messageText(message: MessageResponse): string {
     .join('\n');
 }
 
+function runEventText(events: RunEventResponse[]): string {
+  return events
+    .filter((event) => event.event_type === 'assistant.delta')
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((event) => event.payload.text)
+    .filter((text): text is string => typeof text === 'string')
+    .join('');
+}
+
 function App() {
   const [apiStatus, setApiStatus] = useState('Not checked');
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
@@ -151,6 +186,17 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageResponse[]>([]);
   const [messagesStatus, setMessagesStatus] = useState('Messages not loaded');
+  const [draft, setDraft] = useState('');
+  const [selectedModelKey, setSelectedModelKey] = useState('');
+  const [activeTurn, setActiveTurn] = useState<ActiveTurn | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEventResponse[]>([]);
+  const [turnStatus, setTurnStatus] = useState('Ready');
+  const [turnError, setTurnError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const conversationRef = useRef<HTMLElement | null>(null);
+  const conversationEndRef = useRef<HTMLDivElement | null>(null);
+  const followConversationRef = useRef(true);
 
   async function checkApi() {
     setApiStatus('Checking...');
@@ -330,6 +376,10 @@ function App() {
 
   useEffect(() => {
     setMessages([]);
+    setRunEvents([]);
+    setTurnStatus('Ready');
+    setTurnError(null);
+    followConversationRef.current = true;
 
     if (selectedSessionId === null) {
       setMessagesStatus('Select a session');
@@ -365,6 +415,119 @@ function App() {
       window.clearTimeout(timeoutId);
     };
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (followConversationRef.current) {
+      conversationEndRef.current?.scrollIntoView({ block: 'end' });
+    }
+  }, [messages, runEvents]);
+
+  useEffect(() => {
+    if (activeTurn === null) return undefined;
+
+    let active = true;
+    let pollTimeoutId: number | undefined;
+    let requestController: AbortController | null = null;
+
+    const schedulePoll = (delay: number) => {
+      pollTimeoutId = window.setTimeout(() => {
+        void pollRun();
+      }, delay);
+    };
+
+    const pollRun = async () => {
+      requestController = new AbortController();
+      const requestTimeoutId = window.setTimeout(
+        () => requestController?.abort(),
+        5000,
+      );
+
+      try {
+        const [run, events] = await Promise.all([
+          getApiJson<AgentRunResponse>(
+            `/api/v1/runs/${activeTurn.runId}`,
+            requestController.signal,
+          ),
+          getApiJson<RunEventResponse[]>(
+            `/api/v1/runs/${activeTurn.runId}/events`,
+            requestController.signal,
+          ),
+        ]);
+
+        if (!active) return;
+
+        setRunEvents(events);
+        setTurnError(null);
+
+        if (TERMINAL_RUN_STATUSES.has(run.status)) {
+          setTurnStatus(
+            run.status === 'completed'
+              ? 'Response complete'
+              : run.status === 'cancelled'
+                ? 'Stopped'
+                : 'Generation failed',
+          );
+
+          const history = await getApiJson<MessageResponse[]>(
+            `/api/v1/sessions/${activeTurn.sessionId}/messages`,
+            requestController.signal,
+          );
+
+          if (!active) return;
+
+          setMessages(history);
+          setMessagesStatus(
+            history.length === 0
+              ? 'No messages found'
+              : `${history.length} message${history.length === 1 ? '' : 's'} loaded`,
+          );
+          setTurnError(
+            run.status === 'failed'
+              ? run.error_message ?? 'The agent run failed.'
+              : null,
+          );
+
+          if (run.status === 'completed') {
+            setRunEvents([]);
+          }
+
+          setActiveTurn(null);
+          setIsStopping(false);
+          return;
+        }
+
+        setTurnStatus(
+          isStopping
+            ? 'Stopping...'
+            : run.status === 'queued'
+              ? 'Starting...'
+              : 'Generating...',
+        );
+        schedulePoll(300);
+      } catch (error) {
+        if (!active) return;
+
+        setTurnStatus('Reconnecting...');
+        setTurnError(
+          `Live update interrupted: ${requestErrorMessage(error)}. Retrying...`,
+        );
+        schedulePoll(1000);
+      } finally {
+        window.clearTimeout(requestTimeoutId);
+      }
+    };
+
+    void pollRun();
+
+    return () => {
+      active = false;
+      requestController?.abort();
+
+      if (pollTimeoutId !== undefined) {
+        window.clearTimeout(pollTimeoutId);
+      }
+    };
+  }, [activeTurn, isStopping]);
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -425,6 +588,98 @@ function App() {
     }
   }
 
+  async function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const text = draft.trim();
+    const selectedModel = MODEL_OPTIONS.find(
+      (modelOption) => modelOption.key === selectedModelKey,
+    );
+
+    if (
+      text.length === 0
+      || selectedSessionId === null
+      || selectedModel === undefined
+      || activeTurn !== null
+      || isSubmitting
+    ) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+    setIsSubmitting(true);
+    setTurnStatus('Sending message...');
+    setTurnError(null);
+    setRunEvents([]);
+    followConversationRef.current = true;
+
+    try {
+      const userMessage = await postApiJson<MessageResponse>(
+        `/api/v1/sessions/${selectedSessionId}/messages`,
+        { text },
+        controller.signal,
+      );
+
+      setMessages((currentMessages) => [...currentMessages, userMessage]);
+      setMessagesStatus('Message sent');
+      setDraft('');
+      setTurnStatus('Creating run...');
+
+      const run = await postApiJson<AgentRunResponse>(
+        `/api/v1/sessions/${selectedSessionId}/runs`,
+        {
+          trigger_message_id: userMessage.id,
+          model_provider: selectedModel.provider,
+          model_name: selectedModel.model,
+        },
+        controller.signal,
+      );
+
+      await postApiJson<AgentRunResponse>(
+        `/api/v1/runs/${run.id}/execute`,
+        {
+          max_output_tokens: 1024,
+          max_steps: 8,
+        },
+        controller.signal,
+      );
+
+      setTurnStatus('Starting...');
+      setActiveTurn({
+        runId: run.id,
+        sessionId: selectedSessionId,
+      });
+    } catch (error) {
+      setTurnStatus('Send failed');
+      setTurnError(requestErrorMessage(error));
+    } finally {
+      window.clearTimeout(timeoutId);
+      setIsSubmitting(false);
+    }
+  }
+
+  async function stopAgent() {
+    if (activeTurn === null || isStopping) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+    setIsStopping(true);
+    setTurnStatus('Stopping...');
+    setTurnError(null);
+
+    try {
+      await postApiJson<AgentRunResponse>(
+        `/api/v1/runs/${activeTurn.runId}/cancel`,
+        {},
+        controller.signal,
+      );
+    } catch (error) {
+      setIsStopping(false);
+      setTurnError(`Stop failed: ${requestErrorMessage(error)}`);
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId,
   ) ?? null;
@@ -434,6 +689,15 @@ function App() {
   const selectedSession = agentSessions.find(
     (agentSession) => agentSession.id === selectedSessionId,
   ) ?? null;
+  const selectedModel = MODEL_OPTIONS.find(
+    (modelOption) => modelOption.key === selectedModelKey,
+  );
+  const liveAssistantText = runEventText(runEvents);
+  const turnIsActive = isSubmitting || activeTurn !== null;
+  const canSend = selectedSession !== null
+    && selectedModel !== undefined
+    && draft.trim().length > 0
+    && !turnIsActive;
 
   const composerPlaceholder = selectedProject === null
     ? 'Select a project to continue'
@@ -441,7 +705,11 @@ function App() {
       ? 'Select a workspace to continue'
       : selectedSession === null
         ? 'Select a session to continue'
-        : 'Message sending will connect in the next frontend stage';
+        : selectedModel === undefined
+          ? 'Select a model to start'
+          : turnIsActive
+            ? 'Wait for the current response'
+            : 'Ask Clean Code anything';
 
   return (
     <div className="app-shell">
@@ -463,6 +731,7 @@ function App() {
           type="button"
           aria-expanded={isProjectFormOpen}
           onClick={() => setIsProjectFormOpen((isOpen) => !isOpen)}
+          disabled={turnIsActive}
         >
           <Icon name="plus" size={15} />
           New project
@@ -478,7 +747,7 @@ function App() {
               onChange={(event) => setProjectName(event.target.value)}
               maxLength={120}
               placeholder="My agent project"
-              disabled={isCreating}
+              disabled={isCreating || turnIsActive}
               autoFocus
               required
             />
@@ -491,7 +760,7 @@ function App() {
               onChange={(event) => setProjectDescription(event.target.value)}
               placeholder="Optional context"
               rows={3}
-              disabled={isCreating}
+              disabled={isCreating || turnIsActive}
             />
 
             <div className="project-form-actions">
@@ -499,11 +768,11 @@ function App() {
                 className="button button--ghost"
                 type="button"
                 onClick={() => setIsProjectFormOpen(false)}
-                disabled={isCreating}
+                disabled={isCreating || turnIsActive}
               >
                 Cancel
               </button>
-              <button className="button button--primary" type="submit" disabled={isCreating}>
+              <button className="button button--primary" type="submit" disabled={isCreating || turnIsActive}>
                 {isCreating ? 'Creating...' : 'Create'}
               </button>
             </div>
@@ -513,7 +782,7 @@ function App() {
 
         <div className="sidebar-section-heading">
           <span>Projects</span>
-          <button type="button" aria-label="Reload projects" onClick={loadProjects}>
+          <button type="button" aria-label="Reload projects" onClick={loadProjects} disabled={turnIsActive}>
             <Icon name="refresh" size={14} />
           </button>
         </div>
@@ -530,6 +799,7 @@ function App() {
                   type="button"
                   aria-expanded={projectIsActive}
                   onClick={() => setSelectedProjectId(project.id)}
+                  disabled={turnIsActive}
                 >
                   <span className="project-icon"><Icon name="folder" size={15} /></span>
                   <span className="project-row-copy">
@@ -556,6 +826,7 @@ function App() {
                             aria-expanded={workspaceIsActive}
                             title={workspace.root_path}
                             onClick={() => setSelectedWorkspaceId(workspace.id)}
+                            disabled={turnIsActive}
                           >
                             <span className="workspace-icon"><Icon name="folder" size={14} /></span>
                             <span>{workspace.name}</span>
@@ -574,6 +845,7 @@ function App() {
                                   type="button"
                                   key={agentSession.id}
                                   onClick={() => setSelectedSessionId(agentSession.id)}
+                                  disabled={turnIsActive}
                                 >
                                   <span className="session-icon"><Icon name="message" size={13} /></span>
                                   <span>{agentSession.title}</span>
@@ -616,14 +888,24 @@ function App() {
             </div>
           </div>
           <div className="header-actions">
-            <span className="model-chip">Model not selected</span>
-            <button className="icon-button" type="button" aria-label="Refresh project data" onClick={loadProjects}>
+            <span className="model-chip">{selectedModel?.label ?? 'Model not selected'}</span>
+            <button className="icon-button" type="button" aria-label="Refresh project data" onClick={loadProjects} disabled={turnIsActive}>
               <Icon name="refresh" size={15} />
             </button>
           </div>
         </header>
 
-        <section className="conversation" aria-label="Agent conversation">
+        <section
+          ref={conversationRef}
+          className="conversation"
+          aria-label="Agent conversation"
+          onScroll={(event) => {
+            const scrollport = event.currentTarget;
+            followConversationRef.current = scrollport.scrollHeight
+              - scrollport.scrollTop
+              - scrollport.clientHeight < 80;
+          }}
+        >
           <div className="conversation-column">
             {selectedSession === null ? (
               <div className="assistant-message">
@@ -658,7 +940,7 @@ function App() {
                   <p>{selectedWorkspace?.root_path}</p>
                 </div>
 
-                {messages.length === 0 ? (
+                {messages.length === 0 && activeTurn === null && liveAssistantText.length === 0 ? (
                   <p className="transcript-status" role="status">{messagesStatus}</p>
                 ) : (
                   <div className="message-list">
@@ -684,8 +966,32 @@ function App() {
                         </article>
                       );
                     })}
+                    {(activeTurn !== null || liveAssistantText.length > 0) && (
+                      <article
+                        className="transcript-message transcript-message--live"
+                        data-role="assistant"
+                        aria-live="polite"
+                      >
+                        <span className="message-author-mark">
+                          <img className="product-logo" src="/clean-code-logo.png" alt="" />
+                        </span>
+                        <div className="message-body">
+                          <header>
+                            <strong>Clean Code</strong>
+                            <span className="generation-state">{turnStatus}</span>
+                          </header>
+                          <p>
+                            {liveAssistantText || 'Thinking'}
+                            {activeTurn !== null && !isStopping && (
+                              <span className="stream-cursor" aria-hidden="true" />
+                            )}
+                          </p>
+                        </div>
+                      </article>
+                    )}
                   </div>
                 )}
+                <div ref={conversationEndRef} />
               </div>
             )}
 
@@ -732,29 +1038,67 @@ function App() {
         </section>
 
         <footer className="composer-wrap">
-          <div className="composer" aria-label="Agent composer">
+          <form className="composer" aria-label="Agent composer" onSubmit={sendMessage}>
             <textarea
               aria-label="Agent request"
               placeholder={composerPlaceholder}
               rows={2}
-              disabled
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+
+                  if (canSend) {
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }
+              }}
+              disabled={selectedSession === null}
+              readOnly={turnIsActive}
             />
             <div className="composer-toolbar">
               <div className="composer-options">
                 <button type="button" className="composer-icon-button" disabled aria-label="Add context">
                   <Icon name="plus" size={16} />
                 </button>
-                <span>{selectedSession?.title ?? selectedWorkspace?.name ?? 'Workspace required'}</span>
+                <select
+                  className="model-select"
+                  aria-label="Model"
+                  value={selectedModelKey}
+                  onChange={(event) => setSelectedModelKey(event.target.value)}
+                  disabled={selectedSession === null || turnIsActive}
+                >
+                  <option value="">Select model</option>
+                  {MODEL_OPTIONS.map((modelOption) => (
+                    <option value={modelOption.key} key={modelOption.key}>
+                      {modelOption.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <button type="button" className="send-button" disabled aria-label="Send message">
-                <Icon name="arrow-up" size={17} />
-              </button>
+              {activeTurn !== null ? (
+                <button
+                  type="button"
+                  className="send-button send-button--stop"
+                  aria-label="Stop response"
+                  onClick={() => void stopAgent()}
+                  disabled={isStopping}
+                >
+                  <Icon name="stop" size={16} />
+                </button>
+              ) : (
+                <button type="submit" className="send-button" disabled={!canSend} aria-label="Send message">
+                  <Icon name="arrow-up" size={17} />
+                </button>
+              )}
             </div>
-          </div>
-          <p className="composer-note">
-            {selectedSession
-              ? 'Stored history is connected. Message sending is the next stage.'
-              : 'Select a stored session to load its message history.'}
+          </form>
+          <p className="composer-note" data-error={turnError !== null || undefined} role="status">
+            {turnError
+              ?? (selectedSession
+                ? `${turnStatus} · Enter to send, Shift+Enter for a new line`
+                : 'Select a stored session to load its message history.')}
           </p>
         </footer>
       </main>

@@ -4,9 +4,38 @@ from typing import Literal, Protocol
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderTextBlock:
+    text: str
+    type: Literal["text"] = field(default="text", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderToolCallBlock:
+    call_id: str
+    name: str
+    arguments: dict[str, object]
+    type: Literal["tool_call"] = field(default="tool_call", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderToolResultBlock:
+    call_id: str
+    content: str
+    is_error: bool = False
+    type: Literal["tool_result"] = field(default="tool_result", init=False)
+
+
+ProviderContentBlock = (
+    ProviderTextBlock
+    | ProviderToolCallBlock
+    | ProviderToolResultBlock
+)
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderMessage:
     role: Literal["user", "assistant"]
-    content: str
+    content: tuple[ProviderContentBlock, ...]
 
 
 @dataclass(frozen=True, slots=True)

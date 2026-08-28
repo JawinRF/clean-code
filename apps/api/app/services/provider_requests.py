@@ -2,7 +2,11 @@ from collections.abc import Sequence
 from typing import Literal
 
 from app.models import Message
-from app.providers import ProviderMessage, ProviderRequest
+from app.providers import (
+    ProviderMessage,
+    ProviderRequest,
+    ProviderTextBlock,
+)
 from app.schemas.message import MessageContent
 
 
@@ -37,7 +41,7 @@ def build_provider_request(
         provider_messages.append(
             ProviderMessage(
                 role=role,
-                content=text,
+                content=(ProviderTextBlock(text=text),),
             )
         )
 

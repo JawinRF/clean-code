@@ -1,15 +1,79 @@
 from collections.abc import AsyncIterator
 
 from anthropic import AsyncAnthropic, omit
-from anthropic.types import MessageParam, ToolParam
+from anthropic.types import (
+    MessageParam,
+    TextBlockParam,
+    ToolParam,
+    ToolResultBlockParam,
+    ToolUseBlockParam,
+)
 
 from app.providers.base import (
     ProviderEvent,
+    ProviderMessage,
     ProviderRequest,
+    ProviderTextBlock,
+    ProviderToolCallBlock,
+    ProviderToolResultBlock,
     ResponseCompleted,
     TextDelta,
     ToolCallDelta,
 )
+
+
+def _to_anthropic_messages(
+    provider_messages: tuple[ProviderMessage, ...],
+) -> list[MessageParam]:
+    messages: list[MessageParam] = []
+
+    for message in provider_messages:
+        content: list[
+            TextBlockParam | ToolUseBlockParam | ToolResultBlockParam
+        ] = []
+
+        for block in message.content:
+            if isinstance(block, ProviderTextBlock):
+                content.append(
+                    {
+                        "type": "text",
+                        "text": block.text,
+                    }
+                )
+                continue
+
+            if isinstance(block, ProviderToolCallBlock):
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": block.call_id,
+                        "name": block.name,
+                        "input": block.arguments,
+                    }
+                )
+                continue
+
+            if isinstance(block, ProviderToolResultBlock):
+                content.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.call_id,
+                        "content": block.content,
+                        "is_error": block.is_error,
+                    }
+                )
+                continue
+
+            raise TypeError("Unsupported provider content block.")
+
+        messages.append(
+            {
+                "role": message.role,
+                "content": content,
+            }
+        )
+
+    return messages
 
 
 class AnthropicAdapter:
@@ -27,13 +91,7 @@ class AnthropicAdapter:
         self,
         request: ProviderRequest,
     ) -> AsyncIterator[ProviderEvent]:
-        messages: list[MessageParam] = [
-            {
-                "role": message.role,
-                "content": message.content,
-            }
-            for message in request.messages
-        ]
+        messages = _to_anthropic_messages(request.messages)
         tools: list[ToolParam] = [
             {
                 "name": tool.name,

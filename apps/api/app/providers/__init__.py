@@ -1,8 +1,12 @@
 from app.providers.base import (
     LlmAdapter,
+    ProviderContentBlock,
     ProviderEvent,
     ProviderMessage,
     ProviderRequest,
+    ProviderTextBlock,
+    ProviderToolCallBlock,
+    ProviderToolResultBlock,
     ResponseCompleted,
     TextDelta,
     ToolCallDelta,
@@ -11,9 +15,13 @@ from app.providers.base import (
 
 __all__ = [
     "LlmAdapter",
+    "ProviderContentBlock",
     "ProviderEvent",
     "ProviderMessage",
     "ProviderRequest",
+    "ProviderTextBlock",
+    "ProviderToolCallBlock",
+    "ProviderToolResultBlock",
     "ResponseCompleted",
     "TextDelta",
     "ToolCallDelta",

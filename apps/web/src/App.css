@@ -38,10 +38,16 @@
 .brand-mark {
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.product-logo {
+  display: block;
+  width: 42px;
+  max-width: none;
+  transform: translate(-7px, -7px);
+  filter: invert(1) contrast(1.08);
+  mix-blend-mode: screen;
 }
 
 .sidebar-brand > span:last-child,
@@ -378,10 +384,12 @@
   width: 26px;
   height: 26px;
   margin-top: 1px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.assistant-mark .product-logo {
+  width: 39px;
+  transform: translate(-6.5px, -6.5px);
 }
 
 .assistant-content {

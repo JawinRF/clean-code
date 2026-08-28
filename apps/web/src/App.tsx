@@ -33,7 +33,6 @@ type IconName =
   | 'folder'
   | 'plus'
   | 'refresh'
-  | 'spark'
   | 'terminal';
 
 function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
@@ -44,7 +43,6 @@ function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     folder: <path d="M3 7.5h6l2-2h10v13H3z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 8a7 7 0 0 1 11.7-1.9L20 8M4 16l2.2 1.9A7 7 0 0 0 17.9 16" />,
-    spark: <path d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z" />,
     terminal: <path d="m5 7 4 4-4 4M11 16h8" />,
   };
 
@@ -276,7 +274,9 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-mark"><Icon name="spark" size={16} /></span>
+          <span className="brand-mark">
+            <img className="product-logo" src="/clean-code-logo.png" alt="" />
+          </span>
           <span>
             <strong>Clean Code</strong>
             <small>Agent workspace</small>
@@ -396,7 +396,9 @@ function App() {
         <section className="conversation" aria-label="Agent conversation">
           <div className="conversation-column">
             <div className="assistant-message">
-              <span className="assistant-mark"><Icon name="spark" size={15} /></span>
+              <span className="assistant-mark">
+                <img className="product-logo" src="/clean-code-logo.png" alt="" />
+              </span>
               <div className="assistant-content">
                 <p className="eyebrow">Workspace overview</p>
                 <h1>

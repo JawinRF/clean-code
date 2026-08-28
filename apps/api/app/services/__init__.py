@@ -32,6 +32,11 @@ from app.services.text_run import (
     TextRunExecutionError,
     execute_text_run,
 )
+from app.services.tool_calls import (
+    AssembledToolCall,
+    ToolCallAssembler,
+    ToolCallAssemblyError,
+)
 from app.services.tool_execution import execute_tool_call
 from app.services.workspace_paths import (
     InvalidWorkspaceRootError,
@@ -41,6 +46,7 @@ from app.services.workspace_paths import (
 
 __all__ = [
     "AgentRunNotFoundError",
+    "AssembledToolCall",
     "InvalidWorkspaceRootError",
     "ProviderStreamProtocolError",
     "RunAlreadyFinishedError",
@@ -51,6 +57,8 @@ __all__ = [
     "RunTaskSupervisor",
     "RunTaskSupervisorClosedError",
     "TextRunExecutionError",
+    "ToolCallAssembler",
+    "ToolCallAssemblyError",
     "UnsupportedMessageRoleError",
     "append_run_event",
     "build_provider_request",

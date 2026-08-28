@@ -16,6 +16,10 @@ import {
   type RunEventResponse,
   type WorkspaceResponse,
 } from './api';
+import {
+  AssistantMessageContent,
+  UserMessageContent,
+} from './MessageContent';
 import './App.css';
 
 type ReadyResponse = {
@@ -40,6 +44,13 @@ type StatusTone = 'neutral' | 'working' | 'success' | 'danger';
 type ActiveTurn = {
   runId: string;
   sessionId: string;
+  triggerMessageId: string;
+  providerId: string;
+  modelId: string;
+};
+
+type RetryTurn = Omit<ActiveTurn, 'runId'> & {
+  runId?: string;
 };
 
 type ModelOption = {
@@ -62,9 +73,13 @@ const TERMINAL_RUN_STATUSES = new Set([
 
 type IconName =
   | 'arrow-up'
+  | 'arrow-down'
   | 'check'
   | 'chevron'
+  | 'close'
+  | 'copy'
   | 'folder'
+  | 'menu'
   | 'message'
   | 'plus'
   | 'refresh'
@@ -74,9 +89,13 @@ type IconName =
 function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
     'arrow-up': <path d="m6 9 6-6 6 6M12 3v14" />,
+    'arrow-down': <path d="m6 9 6 6 6-6" />,
     check: <path d="m5 12 4 4L19 6" />,
     chevron: <path d="m9 18 6-6-6-6" />,
+    close: <path d="m6 6 12 12M18 6 6 18" />,
+    copy: <path d="M9 9h10v10H9zM5 15H4V5h10v1" />,
     folder: <path d="M3 7.5h6l2-2h10v13H3z" />,
+    menu: <path d="M5 7h14M5 12h14M5 17h14" />,
     message: <path d="M4 5h16v12H8l-4 3z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 8a7 7 0 0 1 11.7-1.9L20 8M4 16l2.2 1.9A7 7 0 0 0 17.9 16" />,
@@ -99,6 +118,33 @@ function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     >
       {paths[name]}
     </svg>
+  );
+}
+
+function CopyMessageButton({ text }: { text: string }) {
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus('copied');
+      window.setTimeout(() => setCopyStatus('idle'), 1600);
+    } catch {
+      setCopyStatus('failed');
+    }
+  }
+
+  return (
+    <button
+      className="message-action"
+      type="button"
+      onClick={() => void copyMessage()}
+      aria-label={copyStatus === 'copied' ? 'Message copied' : 'Copy message'}
+      title={copyStatus === 'failed' ? 'Copy failed' : 'Copy message'}
+    >
+      {copyStatus === 'copied' ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
+      <span>{copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Copy failed' : 'Copy'}</span>
+    </button>
   );
 }
 
@@ -172,6 +218,26 @@ function runEventText(events: RunEventResponse[]): string {
     .join('');
 }
 
+function mergeSessionMessages(
+  persistedMessages: MessageResponse[],
+  currentMessages: MessageResponse[],
+  sessionId: string,
+): MessageResponse[] {
+  const byId = new Map(
+    persistedMessages.map((message) => [message.id, message]),
+  );
+
+  for (const message of currentMessages) {
+    if (message.session_id === sessionId && !byId.has(message.id)) {
+      byId.set(message.id, message);
+    }
+  }
+
+  return [...byId.values()].sort((left, right) => (
+    new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+  ));
+}
+
 function modelOptions(
   catalog: ModelCatalogResponse | null,
 ): ModelOption[] {
@@ -183,6 +249,14 @@ function modelOptions(
       label: model.label,
     }))
   )) ?? [];
+}
+
+function sessionTitleFrom(text: string): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+
+  if (oneLine.length <= 64) return oneLine;
+
+  return `${oneLine.slice(0, 61)}...`;
 }
 
 function App() {
@@ -198,9 +272,15 @@ function App() {
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
   const [workspacesStatus, setWorkspacesStatus] = useState('Workspaces not loaded');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceRootPath, setWorkspaceRootPath] = useState('');
+  const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState('Enter a local folder path');
+  const [isWorkspaceFormOpen, setIsWorkspaceFormOpen] = useState(false);
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [agentSessions, setAgentSessions] = useState<AgentSessionResponse[]>([]);
   const [sessionsStatus, setSessionsStatus] = useState('Sessions not loaded');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [isNewConversation, setIsNewConversation] = useState(false);
   const [messages, setMessages] = useState<MessageResponse[]>([]);
   const [messagesStatus, setMessagesStatus] = useState('Messages not loaded');
   const [draft, setDraft] = useState('');
@@ -213,13 +293,18 @@ function App() {
   const [runEvents, setRunEvents] = useState<RunEventResponse[]>([]);
   const [turnStatus, setTurnStatus] = useState('Ready');
   const [turnError, setTurnError] = useState<string | null>(null);
+  const [retryTurn, setRetryTurn] = useState<RetryTurn | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
-  const conversationEndRef = useRef<HTMLDivElement | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const conversationRef = useRef<HTMLElement | null>(null);
   const followConversationRef = useRef(true);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const composingRef = useRef(false);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
 
-  async function checkApi() {
+  const checkApi = useCallback(async () => {
     setApiStatus('Checking...');
 
     const controller = new AbortController();
@@ -252,7 +337,7 @@ function App() {
     } finally {
       window.clearTimeout(timeoutId);
     }
-  }
+  }, []);
 
   const loadModels = useCallback(async () => {
     const controller = new AbortController();
@@ -329,6 +414,32 @@ function App() {
   }, [loadProjects]);
 
   useEffect(() => {
+    void checkApi();
+  }, [checkApi]);
+
+  useEffect(() => {
+    const options = modelOptions(modelCatalog);
+
+    if (options.length === 0) {
+      setSelectedModel(null);
+      return;
+    }
+
+    const selectionIsAvailable = selectedModel !== null
+      && options.some((option) => (
+        option.providerId === selectedModel.providerId
+        && option.modelId === selectedModel.modelId
+      ));
+
+    if (selectionIsAvailable) return;
+
+    setSelectedModel({
+      providerId: options[0].providerId,
+      modelId: options[0].modelId,
+    });
+  }, [modelCatalog, selectedModel]);
+
+  useEffect(() => {
     if (!isModelMenuOpen) return undefined;
 
     const closeOnPointerDown = (event: PointerEvent) => {
@@ -370,6 +481,7 @@ function App() {
     setSelectedWorkspaceId(null);
     setAgentSessions([]);
     setSelectedSessionId(null);
+    setIsNewConversation(false);
     setMessages([]);
 
     if (selectedProjectId === null) {
@@ -415,6 +527,7 @@ function App() {
   useEffect(() => {
     setAgentSessions([]);
     setSelectedSessionId(null);
+    setIsNewConversation(false);
     setMessages([]);
 
     if (selectedWorkspaceId === null) {
@@ -436,6 +549,7 @@ function App() {
       if (!active) return;
       setAgentSessions(data);
       setSelectedSessionId(data[0]?.id ?? null);
+      setIsNewConversation(data.length === 0);
       setSessionsStatus(
         data.length === 0
           ? 'No sessions found'
@@ -460,10 +574,16 @@ function App() {
     setRunEvents([]);
     setTurnStatus('Ready');
     setTurnError(null);
+    setRetryTurn(null);
     followConversationRef.current = true;
+    setShowScrollToBottom(false);
 
     if (selectedSessionId === null) {
-      setMessagesStatus('Select a session');
+      setMessagesStatus(
+        isNewConversation
+          ? 'Ready for your first message'
+          : 'Select a session',
+      );
       return undefined;
     }
 
@@ -477,7 +597,11 @@ function App() {
       controller.signal,
     ).then((data) => {
       if (!active) return;
-      setMessages(data);
+      setMessages((currentMessages) => mergeSessionMessages(
+        data,
+        currentMessages,
+        selectedSessionId,
+      ));
       setMessagesStatus(
         data.length === 0
           ? 'No messages found'
@@ -495,13 +619,35 @@ function App() {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [selectedSessionId]);
+  }, [isNewConversation, selectedSessionId]);
 
   useEffect(() => {
-    if (followConversationRef.current) {
-      conversationEndRef.current?.scrollIntoView({ block: 'end' });
-    }
-  }, [messages, runEvents]);
+    const textarea = composerRef.current;
+
+    if (textarea === null) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+  }, [draft]);
+
+  useEffect(() => {
+    if (selectedSessionId === null && !isNewConversation) return;
+
+    window.requestAnimationFrame(() => {
+      composerRef.current?.focus({ preventScroll: true });
+    });
+  }, [isNewConversation, selectedSessionId]);
+
+  useEffect(() => {
+    const conversation = conversationRef.current;
+
+    if (!followConversationRef.current || conversation === null) return;
+
+    window.requestAnimationFrame(() => {
+      conversation.scrollTop = conversation.scrollHeight;
+      setShowScrollToBottom(false);
+    });
+  }, [activeTurn, messages, runEvents]);
 
   useEffect(() => {
     if (activeTurn === null) return undefined;
@@ -570,6 +716,14 @@ function App() {
 
           if (run.status === 'completed') {
             setRunEvents([]);
+            setRetryTurn(null);
+          } else {
+            setRetryTurn({
+              sessionId: activeTurn.sessionId,
+              triggerMessageId: activeTurn.triggerMessageId,
+              providerId: activeTurn.providerId,
+              modelId: activeTurn.modelId,
+            });
           }
 
           setActiveTurn(null);
@@ -654,6 +808,8 @@ function App() {
       setProjectDescription('');
       setCreateStatus(`Created ${createdProject.name}`);
       setIsProjectFormOpen(false);
+      setIsWorkspaceFormOpen(true);
+      setWorkspaceCreateStatus('Enter the folder that this agent can use');
     } catch (error) {
       const message = error instanceof DOMException
         && error.name === 'AbortError'
@@ -669,6 +825,88 @@ function App() {
     }
   }
 
+  async function createWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (selectedProjectId === null) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+    setIsCreatingWorkspace(true);
+    setWorkspaceCreateStatus('Adding workspace...');
+
+    try {
+      const createdWorkspace = await postApiJson<WorkspaceResponse>(
+        `/api/v1/projects/${selectedProjectId}/workspaces`,
+        {
+          name: workspaceName.trim(),
+          root_path: workspaceRootPath.trim(),
+        },
+        controller.signal,
+      );
+
+      setWorkspaces((currentWorkspaces) => [
+        createdWorkspace,
+        ...currentWorkspaces,
+      ]);
+      setSelectedWorkspaceId(createdWorkspace.id);
+      setWorkspacesStatus('Workspace list updated');
+      setWorkspaceName('');
+      setWorkspaceRootPath('');
+      setWorkspaceCreateStatus(`Added ${createdWorkspace.name}`);
+      setIsWorkspaceFormOpen(false);
+      setIsNewConversation(true);
+    } catch (error) {
+      setWorkspaceCreateStatus(
+        `Workspace failed: ${requestErrorMessage(error)}`,
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
+      setIsCreatingWorkspace(false);
+    }
+  }
+
+  const startNewConversation = useCallback(() => {
+    if (selectedWorkspaceId === null || activeTurn !== null || isSubmitting) {
+      return;
+    }
+
+    setSelectedSessionId(null);
+    setIsNewConversation(true);
+    setMessages([]);
+    setRunEvents([]);
+    setDraft('');
+    setTurnStatus('Ready');
+    setTurnError(null);
+    setRetryTurn(null);
+    setMessagesStatus('Ready for your first message');
+    setIsSidebarOpen(false);
+    followConversationRef.current = true;
+    setShowScrollToBottom(false);
+  }, [activeTurn, isSubmitting, selectedWorkspaceId]);
+
+  function selectStoredSession(sessionId: string) {
+    setIsNewConversation(false);
+    setSelectedSessionId(sessionId);
+    setIsSidebarOpen(false);
+  }
+
+  useEffect(() => {
+    const handleNewConversationShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'n') return;
+      if (selectedWorkspaceId === null || activeTurn !== null || isSubmitting) return;
+
+      event.preventDefault();
+      startNewConversation();
+    };
+
+    document.addEventListener('keydown', handleNewConversationShortcut);
+
+    return () => {
+      document.removeEventListener('keydown', handleNewConversationShortcut);
+    };
+  }, [activeTurn, isSubmitting, selectedWorkspaceId, startNewConversation]);
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -682,36 +920,70 @@ function App() {
 
     if (
       text.length === 0
-      || selectedSessionId === null
+      || (selectedSessionId === null && !isNewConversation)
+      || (selectedSessionId === null && selectedWorkspaceId === null)
       || selectedModelOption === undefined
       || activeTurn !== null
       || isSubmitting
     ) return;
 
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
     setIsSubmitting(true);
     setTurnStatus('Sending message...');
     setTurnError(null);
+    setRetryTurn(null);
     setRunEvents([]);
     followConversationRef.current = true;
+    setShowScrollToBottom(false);
+
+    let targetSessionId = selectedSessionId;
+    let userMessage: MessageResponse | null = null;
+    let run: AgentRunResponse | null = null;
 
     try {
-      const userMessage = await postApiJson<MessageResponse>(
-        `/api/v1/sessions/${selectedSessionId}/messages`,
+      if (targetSessionId === null) {
+        const createdSession = await postApiJson<AgentSessionResponse>(
+          `/api/v1/workspaces/${selectedWorkspaceId}/sessions`,
+          { title: sessionTitleFrom(text) },
+          controller.signal,
+        );
+
+        targetSessionId = createdSession.id;
+        setAgentSessions((currentSessions) => [
+          createdSession,
+          ...currentSessions,
+        ]);
+        setSelectedSessionId(createdSession.id);
+        setIsNewConversation(false);
+      }
+
+      const persistedUserMessage = await postApiJson<MessageResponse>(
+        `/api/v1/sessions/${targetSessionId}/messages`,
         { text },
         controller.signal,
       );
+      userMessage = persistedUserMessage;
 
-      setMessages((currentMessages) => [...currentMessages, userMessage]);
+      if (selectedSessionId === null) {
+        setMessages([persistedUserMessage]);
+        setSelectedSessionId(targetSessionId);
+        setIsNewConversation(false);
+      } else {
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          persistedUserMessage,
+        ]);
+      }
+
       setMessagesStatus('Message sent');
       setDraft('');
       setTurnStatus('Creating run...');
 
-      const run = await postApiJson<AgentRunResponse>(
-        `/api/v1/sessions/${selectedSessionId}/runs`,
+      run = await postApiJson<AgentRunResponse>(
+        `/api/v1/sessions/${targetSessionId}/runs`,
         {
-          trigger_message_id: userMessage.id,
+          trigger_message_id: persistedUserMessage.id,
           model_provider: selectedModelOption.providerId,
           model_name: selectedModelOption.modelId,
         },
@@ -721,7 +993,7 @@ function App() {
       await postApiJson<AgentRunResponse>(
         `/api/v1/runs/${run.id}/execute`,
         {
-          max_output_tokens: 1024,
+          max_output_tokens: 2048,
           max_steps: 8,
         },
         controller.signal,
@@ -730,11 +1002,105 @@ function App() {
       setTurnStatus('Starting...');
       setActiveTurn({
         runId: run.id,
-        sessionId: selectedSessionId,
+        sessionId: targetSessionId,
+        triggerMessageId: persistedUserMessage.id,
+        providerId: selectedModelOption.providerId,
+        modelId: selectedModelOption.modelId,
       });
     } catch (error) {
       setTurnStatus('Send failed');
       setTurnError(requestErrorMessage(error));
+
+      if (targetSessionId !== null && userMessage !== null) {
+        setRetryTurn({
+          sessionId: targetSessionId,
+          triggerMessageId: userMessage.id,
+          providerId: selectedModelOption.providerId,
+          modelId: selectedModelOption.modelId,
+          runId: run?.id,
+        });
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
+      setIsSubmitting(false);
+    }
+  }
+
+  async function retryAgentResponse() {
+    if (retryTurn === null || activeTurn !== null || isSubmitting) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+    setIsSubmitting(true);
+    setTurnError(null);
+    setTurnStatus('Retrying...');
+    setRunEvents([]);
+    followConversationRef.current = true;
+    setShowScrollToBottom(false);
+
+    let runId = retryTurn.runId;
+
+    try {
+      let run = runId === undefined
+        ? null
+        : await getApiJson<AgentRunResponse>(
+            `/api/v1/runs/${runId}`,
+            controller.signal,
+          );
+
+      if (run?.status === 'completed') {
+        const history = await getApiJson<MessageResponse[]>(
+          `/api/v1/sessions/${retryTurn.sessionId}/messages`,
+          controller.signal,
+        );
+        setMessages(history);
+        setMessagesStatus(`${history.length} messages loaded`);
+        setTurnStatus('Response complete');
+        setRetryTurn(null);
+        return;
+      }
+
+      if (run === null || run.status === 'failed' || run.status === 'cancelled') {
+        run = await postApiJson<AgentRunResponse>(
+          `/api/v1/sessions/${retryTurn.sessionId}/runs`,
+          {
+            trigger_message_id: retryTurn.triggerMessageId,
+            model_provider: retryTurn.providerId,
+            model_name: retryTurn.modelId,
+          },
+          controller.signal,
+        );
+        runId = run.id;
+      }
+
+      if (run.status === 'queued') {
+        await postApiJson<AgentRunResponse>(
+          `/api/v1/runs/${run.id}/execute`,
+          {
+            max_output_tokens: 2048,
+            max_steps: 8,
+          },
+          controller.signal,
+        );
+      }
+
+      setTurnStatus(run.status === 'running' ? 'Generating...' : 'Starting...');
+      setActiveTurn({
+        runId: run.id,
+        sessionId: retryTurn.sessionId,
+        triggerMessageId: retryTurn.triggerMessageId,
+        providerId: retryTurn.providerId,
+        modelId: retryTurn.modelId,
+      });
+      setRetryTurn(null);
+    } catch (error) {
+      setTurnStatus('Retry failed');
+      setTurnError(requestErrorMessage(error));
+      setRetryTurn((currentTurn) => (
+        currentTurn === null
+          ? null
+          : { ...currentTurn, runId }
+      ));
     } finally {
       window.clearTimeout(timeoutId);
       setIsSubmitting(false);
@@ -789,26 +1155,38 @@ function App() {
   ));
   const liveAssistantText = runEventText(runEvents);
   const turnIsActive = isSubmitting || activeTurn !== null;
-  const canSend = selectedSession !== null
+  const conversationIsReady = selectedWorkspace !== null
+    && (selectedSession !== null || isNewConversation);
+  const canSend = conversationIsReady
     && selectedModelOption !== undefined
     && draft.trim().length > 0
     && !turnIsActive;
+  const activeConversationTitle = isNewConversation
+    ? 'New conversation'
+    : selectedSession?.title ?? selectedProject?.name ?? 'Clean Code';
 
   const composerPlaceholder = selectedProject === null
     ? 'Select a project to continue'
     : selectedWorkspace === null
-      ? 'Select a workspace to continue'
-      : selectedSession === null
-        ? 'Select a session to continue'
+      ? 'Add or select a workspace to continue'
+      : selectedSession === null && !isNewConversation
+        ? 'Select a conversation to continue'
         : selectedModelOption === undefined
           ? 'Select a model to start'
           : turnIsActive
-            ? 'Wait for the current response'
-            : 'Ask Clean Code anything';
+            ? 'Clean Code is responding...'
+            : 'Message Clean Code';
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <button
+        className="sidebar-backdrop"
+        type="button"
+        aria-label="Close navigation"
+        data-open={isSidebarOpen || undefined}
+        onClick={() => setIsSidebarOpen(false)}
+      />
+      <aside className="sidebar" data-open={isSidebarOpen || undefined}>
         <div className="sidebar-brand">
           <span className="brand-mark">
             <img className="product-logo" src="/clean-code-logo.png" alt="" />
@@ -819,7 +1197,26 @@ function App() {
             </span>
             <small>Agent workspace</small>
           </span>
+          <button
+            className="sidebar-close"
+            type="button"
+            aria-label="Close navigation"
+            onClick={() => setIsSidebarOpen(false)}
+          >
+            <Icon name="close" size={16} />
+          </button>
         </div>
+
+        <button
+          className="new-chat-button"
+          type="button"
+          onClick={startNewConversation}
+          disabled={selectedWorkspace === null || turnIsActive}
+        >
+          <Icon name="message" size={15} />
+          New chat
+          <span>Ctrl+N</span>
+        </button>
 
         <button
           className="new-project-button"
@@ -875,11 +1272,73 @@ function App() {
           </form>
         )}
 
+        {isWorkspaceFormOpen && selectedProject !== null && (
+          <form className="project-form workspace-form" onSubmit={createWorkspace}>
+            <div className="form-heading">
+              <strong>Add workspace</strong>
+              <span>{selectedProject.name}</span>
+            </div>
+            <label htmlFor="workspace-name">Workspace name</label>
+            <input
+              id="workspace-name"
+              name="workspace-name"
+              value={workspaceName}
+              onChange={(event) => setWorkspaceName(event.target.value)}
+              maxLength={120}
+              placeholder="Website"
+              disabled={isCreatingWorkspace || turnIsActive}
+              autoFocus
+              required
+            />
+
+            <label htmlFor="workspace-root">Local root path</label>
+            <input
+              id="workspace-root"
+              name="workspace-root"
+              value={workspaceRootPath}
+              onChange={(event) => setWorkspaceRootPath(event.target.value)}
+              placeholder="C:\\path\\to\\repository"
+              disabled={isCreatingWorkspace || turnIsActive}
+              required
+            />
+
+            <div className="project-form-actions">
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={() => setIsWorkspaceFormOpen(false)}
+                disabled={isCreatingWorkspace || turnIsActive}
+              >
+                Cancel
+              </button>
+              <button
+                className="button button--primary"
+                type="submit"
+                disabled={isCreatingWorkspace || turnIsActive}
+              >
+                {isCreatingWorkspace ? 'Adding...' : 'Add'}
+              </button>
+            </div>
+            <p className="form-status" role="status">{workspaceCreateStatus}</p>
+          </form>
+        )}
+
         <div className="sidebar-section-heading">
           <span>Projects</span>
-          <button type="button" aria-label="Reload projects" onClick={loadProjects} disabled={turnIsActive}>
-            <Icon name="refresh" size={14} />
-          </button>
+          <span className="sidebar-heading-actions">
+            <button
+              type="button"
+              aria-label="Add workspace"
+              title="Add workspace"
+              onClick={() => setIsWorkspaceFormOpen(true)}
+              disabled={selectedProject === null || turnIsActive}
+            >
+              <Icon name="plus" size={14} />
+            </button>
+            <button type="button" aria-label="Reload projects" onClick={loadProjects} disabled={turnIsActive}>
+              <Icon name="refresh" size={14} />
+            </button>
+          </span>
         </div>
 
         <nav className="project-list" aria-label="Projects">
@@ -930,7 +1389,19 @@ function App() {
 
                           {workspaceIsActive && (
                             <div className="session-list" role="group" aria-label={`${workspace.name} sessions`}>
-                              {agentSessions.length === 0 && (
+                              {isNewConversation && (
+                                <button
+                                  className="session-row"
+                                  data-active
+                                  type="button"
+                                  onClick={startNewConversation}
+                                  disabled={turnIsActive}
+                                >
+                                  <span className="session-icon"><Icon name="message" size={13} /></span>
+                                  <span>New conversation</span>
+                                </button>
+                              )}
+                              {agentSessions.length === 0 && !isNewConversation && (
                                 <p className="tree-status" role="status">{sessionsStatus}</p>
                               )}
                               {agentSessions.map((agentSession) => (
@@ -939,7 +1410,7 @@ function App() {
                                   data-active={agentSession.id === selectedSessionId || undefined}
                                   type="button"
                                   key={agentSession.id}
-                                  onClick={() => setSelectedSessionId(agentSession.id)}
+                                  onClick={() => selectStoredSession(agentSession.id)}
                                   disabled={turnIsActive}
                                 >
                                   <span className="session-icon"><Icon name="message" size={13} /></span>
@@ -975,180 +1446,266 @@ function App() {
 
       <main className="agent-area">
         <header className="agent-header">
+          <button
+            className="icon-button sidebar-toggle"
+            type="button"
+            aria-label="Open navigation"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <Icon name="menu" size={17} />
+          </button>
           <div className="agent-title">
-            <span className="agent-title-icon"><Icon name="folder" size={15} /></span>
             <div>
-              <strong>{selectedSession?.title ?? selectedProject?.name ?? 'No project selected'}</strong>
-              <small>{selectedWorkspace?.name ?? 'Agent'}</small>
+              <strong>{activeConversationTitle}</strong>
+              <small>
+                {selectedWorkspace === null
+                  ? 'Select a workspace'
+                  : `${selectedWorkspace.name} · ${turnStatus}`}
+              </small>
             </div>
           </div>
           <div className="header-actions">
             <span className="model-chip">{selectedModelOption?.label ?? 'Model not selected'}</span>
-            <button className="icon-button" type="button" aria-label="Refresh project data" onClick={loadProjects} disabled={turnIsActive}>
-              <Icon name="refresh" size={15} />
-            </button>
+            <details className="system-menu">
+              <summary className="icon-button" aria-label="Open system status" title="System status">
+                <span className={`status-dot status-dot--${statusTone(apiStatus)}`} />
+                <Icon name="terminal" size={15} />
+              </summary>
+              <div className="system-popover">
+                <div className="system-popover-heading">
+                  <div>
+                    <strong>System status</strong>
+                    <small>API and stored data</small>
+                  </div>
+                  <button className="icon-button" type="button" aria-label="Refresh project data" onClick={loadProjects} disabled={turnIsActive}>
+                    <Icon name="refresh" size={14} />
+                  </button>
+                </div>
+                <ActivityRow
+                  title="System readiness"
+                  detail={apiStatus}
+                  endpoint="/api/v1/ready"
+                  tone={statusTone(apiStatus)}
+                />
+                <ActivityRow
+                  title="Projects"
+                  detail={projectsStatus}
+                  endpoint="/api/v1/projects"
+                  tone={statusTone(projectsStatus)}
+                />
+                {selectedWorkspaceId && (
+                  <ActivityRow
+                    title="Conversations"
+                    detail={sessionsStatus}
+                    endpoint={`/api/v1/workspaces/${selectedWorkspaceId}/sessions`}
+                    tone={statusTone(sessionsStatus)}
+                  />
+                )}
+                <button className="system-check-button" type="button" onClick={() => void checkApi()}>
+                  <Icon name="refresh" size={13} />
+                  Check connection
+                </button>
+              </div>
+            </details>
           </div>
         </header>
 
         <section
+          ref={conversationRef}
           className="conversation"
           aria-label="Agent conversation"
           onScroll={(event) => {
             const scrollport = event.currentTarget;
-            followConversationRef.current = scrollport.scrollHeight
+            const isNearBottom = scrollport.scrollHeight
               - scrollport.scrollTop
               - scrollport.clientHeight < 80;
+            followConversationRef.current = isNearBottom;
+            setShowScrollToBottom(!isNearBottom);
           }}
         >
           <div className="conversation-column">
-            {selectedSession === null ? (
-              <div className="assistant-message">
-                <span className="assistant-mark">
+            {!conversationIsReady ? (
+              <div className="setup-state">
+                <span className="setup-logo">
                   <img className="product-logo" src="/clean-code-logo.png" alt="" />
                 </span>
-                <div className="assistant-content">
-                  <p className="eyebrow">Workspace overview</p>
-                  <h1>
-                    {selectedWorkspace
-                      ? `Choose a session in ${selectedWorkspace.name}`
-                      : selectedProject
-                        ? `Choose a workspace in ${selectedProject.name}`
-                        : 'Choose a project to begin'}
-                  </h1>
-                  <p>
-                    {selectedProject?.description
-                      ?? 'Create or select a project from the sidebar. The existing project and readiness APIs remain active in this shell.'}
-                  </p>
-                  {selectedProject && (
-                    <p className="message-meta">
-                      Created {new Date(selectedProject.created_at).toLocaleString()}
-                    </p>
-                  )}
+                <p className="eyebrow">Local agent workspace</p>
+                <h1>
+                  {selectedProject === null
+                    ? 'Create a project to begin'
+                    : selectedWorkspace === null
+                      ? 'Connect a workspace folder'
+                      : 'Choose a conversation'}
+                </h1>
+                <p>
+                  {selectedProject === null
+                    ? 'A project groups the workspaces and conversations that belong together.'
+                    : selectedWorkspace === null
+                      ? 'The workspace root gives the agent an explicit folder for its work.'
+                      : 'Open a stored conversation or start a new one.'}
+                </p>
+                {selectedProject === null ? (
+                  <button className="button button--primary setup-action" type="button" onClick={() => setIsProjectFormOpen(true)}>
+                    <Icon name="plus" size={14} />
+                    New project
+                  </button>
+                ) : selectedWorkspace === null ? (
+                  <button className="button button--primary setup-action" type="button" onClick={() => setIsWorkspaceFormOpen(true)}>
+                    <Icon name="folder" size={14} />
+                    Add workspace
+                  </button>
+                ) : (
+                  <button className="button button--primary setup-action" type="button" onClick={startNewConversation}>
+                    <Icon name="message" size={14} />
+                    New chat
+                  </button>
+                )}
+              </div>
+            ) : messagesStatus.startsWith('Loading') && messages.length === 0 ? (
+              <div className="conversation-loading" role="status">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : messages.length === 0 && activeTurn === null && liveAssistantText.length === 0 ? (
+              <div className="empty-conversation">
+                <span className="empty-logo">
+                  <img className="product-logo" src="/clean-code-logo.png" alt="" />
+                </span>
+                <h1>What can I help you build?</h1>
+                <p>{selectedWorkspace?.name} · Your conversation is stored in PostgreSQL.</p>
+                <div className="prompt-suggestions" aria-label="Prompt suggestions">
+                  {[
+                    'Explain the structure of this codebase',
+                    'Help me plan the next feature',
+                    'Review a technical decision with me',
+                  ].map((suggestion) => (
+                    <button
+                      type="button"
+                      key={suggestion}
+                      onClick={() => {
+                        setDraft(suggestion);
+                        composerRef.current?.focus();
+                      }}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : (
-              <div className="session-transcript">
-                <div className="session-context">
-                  <p className="eyebrow">Stored session</p>
-                  <h1>{selectedSession.title}</h1>
-                  <p>{selectedWorkspace?.root_path}</p>
-                </div>
+              <div className="message-list">
+                {messages.map((message) => {
+                  const isUser = message.role === 'user';
+                  const text = messageText(message) || 'Empty text message';
 
-                {messages.length === 0 && activeTurn === null && liveAssistantText.length === 0 ? (
-                  <p className="transcript-status" role="status">{messagesStatus}</p>
-                ) : (
-                  <div className="message-list">
-                    {messages.map((message) => {
-                      const isUser = message.role === 'user';
-
-                      return (
-                        <article className="transcript-message" data-role={message.role} key={message.id}>
-                          <span className="message-author-mark">
-                            {isUser
-                              ? 'Y'
-                              : <img className="product-logo" src="/clean-code-logo.png" alt="" />}
-                          </span>
-                          <div className="message-body">
-                            <header>
-                              <strong>{isUser ? 'You' : 'Clean Code'}</strong>
-                              <time dateTime={message.created_at}>
-                                {new Date(message.created_at).toLocaleString()}
-                              </time>
-                            </header>
-                            <p>{messageText(message) || 'Empty text message'}</p>
-                          </div>
-                        </article>
-                      );
-                    })}
-                    {(activeTurn !== null || liveAssistantText.length > 0) && (
-                      <article
-                        className="transcript-message transcript-message--live"
-                        data-role="assistant"
-                        aria-live="polite"
-                      >
+                  return (
+                    <article className="transcript-message" data-role={message.role} key={message.id}>
+                      {!isUser && (
                         <span className="message-author-mark">
                           <img className="product-logo" src="/clean-code-logo.png" alt="" />
                         </span>
-                        <div className="message-body">
-                          <header>
-                            <strong>Clean Code</strong>
-                            <span className="generation-state">{turnStatus}</span>
-                          </header>
-                          <p>
-                            {liveAssistantText || 'Thinking'}
-                            {activeTurn !== null && !isStopping && (
-                              <span className="stream-cursor" aria-hidden="true" />
-                            )}
-                          </p>
+                      )}
+                      <div className="message-body">
+                        {isUser
+                          ? <UserMessageContent text={text} />
+                          : <AssistantMessageContent text={text} />}
+                        <footer className="message-actions">
+                          <time dateTime={message.created_at}>
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </time>
+                          <CopyMessageButton text={text} />
+                        </footer>
+                      </div>
+                    </article>
+                  );
+                })}
+                {(activeTurn !== null || liveAssistantText.length > 0) && (
+                  <article
+                    className="transcript-message transcript-message--live"
+                    data-role="assistant"
+                    aria-live="polite"
+                  >
+                    <span className="message-author-mark">
+                      <img className="product-logo" src="/clean-code-logo.png" alt="" />
+                    </span>
+                    <div className="message-body">
+                      <div className="live-state">
+                        <span className="thinking-dot" />
+                        {turnStatus}
+                      </div>
+                      {liveAssistantText.length > 0 ? (
+                        <>
+                          <AssistantMessageContent text={liveAssistantText} />
+                          {activeTurn !== null && !isStopping && (
+                            <span className="stream-cursor" aria-hidden="true" />
+                          )}
+                        </>
+                      ) : (
+                        <div className="thinking-indicator" aria-label="Clean Code is thinking">
+                          <span />
+                          <span />
+                          <span />
                         </div>
-                      </article>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  </article>
                 )}
-                <div ref={conversationEndRef} />
               </div>
             )}
-
-            <div className="activity-group" aria-label="System activity">
-              <p className="activity-label">System activity</p>
-              <ActivityRow
-                title="System readiness"
-                detail={apiStatus}
-                endpoint="/api/v1/ready"
-                tone={statusTone(apiStatus)}
-              />
-              <ActivityRow
-                title="List projects"
-                detail={projectsStatus}
-                endpoint="/api/v1/projects"
-                tone={statusTone(projectsStatus)}
-              />
-              {selectedProjectId && (
-                <ActivityRow
-                  title="List workspaces"
-                  detail={workspacesStatus}
-                  endpoint={`/api/v1/projects/${selectedProjectId}/workspaces`}
-                  tone={statusTone(workspacesStatus)}
-                />
-              )}
-              {selectedWorkspaceId && (
-                <ActivityRow
-                  title="List sessions"
-                  detail={sessionsStatus}
-                  endpoint={`/api/v1/workspaces/${selectedWorkspaceId}/sessions`}
-                  tone={statusTone(sessionsStatus)}
-                />
-              )}
-              {selectedSessionId && (
-                <ActivityRow
-                  title="Load messages"
-                  detail={messagesStatus}
-                  endpoint={`/api/v1/sessions/${selectedSessionId}/messages`}
-                  tone={statusTone(messagesStatus)}
-                />
-              )}
-            </div>
           </div>
         </section>
+
+        {showScrollToBottom && (
+          <button
+            className="scroll-to-bottom"
+            type="button"
+            aria-label="Scroll to latest message"
+            onClick={() => {
+              const conversation = conversationRef.current;
+
+              if (conversation === null) return;
+
+              followConversationRef.current = true;
+              conversation.scrollTo({ top: conversation.scrollHeight, behavior: 'smooth' });
+              setShowScrollToBottom(false);
+            }}
+          >
+            <Icon name="arrow-down" size={16} />
+          </button>
+        )}
 
         <footer className="composer-wrap">
           <form className="composer" aria-label="Agent composer" onSubmit={sendMessage}>
             <textarea
+              ref={composerRef}
               aria-label="Agent request"
               placeholder={composerPlaceholder}
-              rows={2}
+              rows={1}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                window.setTimeout(() => {
+                  composingRef.current = false;
+                }, 10);
+              }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
+                if (event.key !== 'Enter' || event.shiftKey) return;
+                if (event.nativeEvent.isComposing || composingRef.current) return;
 
-                  if (canSend) {
-                    event.currentTarget.form?.requestSubmit();
-                  }
+                event.preventDefault();
+
+                if (!event.repeat && canSend) {
+                  event.currentTarget.form?.requestSubmit();
                 }
               }}
-              disabled={selectedSession === null}
+              disabled={!conversationIsReady}
               readOnly={turnIsActive}
             />
             <div className="composer-toolbar">
@@ -1164,7 +1721,7 @@ function App() {
                     aria-haspopup="listbox"
                     aria-expanded={isModelMenuOpen}
                     onClick={() => setIsModelMenuOpen((isOpen) => !isOpen)}
-                    disabled={selectedSession === null || turnIsActive}
+                    disabled={!conversationIsReady || turnIsActive}
                   >
                     <span>{selectedModelOption?.label ?? 'Select model'}</span>
                     <span className="model-trigger-chevron">
@@ -1176,11 +1733,13 @@ function App() {
                     <div className="model-menu">
                       <input
                         className="model-search"
-                        type="search"
+                        type="text"
                         value={modelSearch}
                         onChange={(event) => setModelSearch(event.target.value)}
                         placeholder="Search models"
                         aria-label="Search models"
+                        autoComplete="off"
+                        spellCheck={false}
                         autoFocus
                       />
                       <div className="model-menu-heading">Models</div>
@@ -1247,6 +1806,10 @@ function App() {
                 >
                   <Icon name="stop" size={16} />
                 </button>
+              ) : isSubmitting ? (
+                <button type="button" className="send-button send-button--loading" disabled aria-label={turnStatus}>
+                  <span className="button-spinner" />
+                </button>
               ) : (
                 <button type="submit" className="send-button" disabled={!canSend} aria-label="Send message">
                   <Icon name="arrow-up" size={17} />
@@ -1254,12 +1817,25 @@ function App() {
               )}
             </div>
           </form>
-          <p className="composer-note" data-error={turnError !== null || undefined} role="status">
-            {turnError
-              ?? (selectedSession
-                ? `${turnStatus} · Enter to send, Shift+Enter for a new line`
-                : 'Select a stored session to load its message history.')}
-          </p>
+          <div className="composer-feedback" data-error={turnError !== null || undefined} role="status">
+            <span>
+              {turnError
+                ?? (conversationIsReady
+                  ? `${turnStatus} · Enter to send, Shift+Enter for a new line`
+                  : 'Choose a project and workspace to start a conversation.')}
+            </span>
+            {retryTurn !== null && activeTurn === null && (
+              <button type="button" onClick={() => void retryAgentResponse()} disabled={isSubmitting}>
+                <Icon name="refresh" size={12} />
+                Try response again
+              </button>
+            )}
+            {turnError !== null && retryTurn === null && (
+              <button type="button" onClick={() => setTurnError(null)}>
+                Dismiss
+              </button>
+            )}
+          </div>
         </footer>
       </main>
     </div>

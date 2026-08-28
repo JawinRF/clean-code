@@ -1,8 +1,10 @@
 from collections.abc import Iterable
+from pathlib import Path
 
 from app.providers import ToolDefinition
 from app.tools.base import AgentTool
 from app.tools.echo import EchoTool
+from app.tools.list_files import ListFilesTool
 
 
 class DuplicateToolError(Exception):
@@ -47,5 +49,13 @@ class ToolRegistry:
         )
 
 
-def create_default_tool_registry() -> ToolRegistry:
-    return ToolRegistry([EchoTool()])
+def create_default_tool_registry(
+    *,
+    workspace_root: str | Path | None = None,
+) -> ToolRegistry:
+    tools: list[AgentTool] = [EchoTool()]
+
+    if workspace_root is not None:
+        tools.append(ListFilesTool(workspace_root=workspace_root))
+
+    return ToolRegistry(tools)

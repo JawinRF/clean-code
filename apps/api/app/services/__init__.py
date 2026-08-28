@@ -4,7 +4,9 @@ from app.services.provider_requests import (
 )
 from app.services.run_context import (
     RunMessageBoundaryError,
+    RunWorkspaceNotFoundError,
     load_run_messages,
+    load_run_workspace,
 )
 from app.services.run_execution import (
     RunCannotFinishError,
@@ -56,6 +58,7 @@ __all__ = [
     "RunCannotFinishError",
     "RunCannotStartError",
     "RunMessageBoundaryError",
+    "RunWorkspaceNotFoundError",
     "RunTaskAlreadyActiveError",
     "RunTaskSupervisor",
     "RunTaskSupervisorClosedError",
@@ -71,6 +74,7 @@ __all__ = [
     "execute_tool_call",
     "fail_agent_run",
     "load_run_messages",
+    "load_run_workspace",
     "request_run_cancellation",
     "resolve_workspace_root",
     "resolve_workspace_path",

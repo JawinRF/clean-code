@@ -31,7 +31,9 @@ from app.services.provider_requests import (
 )
 from app.services.run_context import (
     RunMessageBoundaryError,
+    RunWorkspaceNotFoundError,
     load_run_messages,
+    load_run_workspace,
 )
 from app.services.run_events import append_run_event
 from app.services.run_execution import (
@@ -110,7 +112,11 @@ def _safe_failure_details(error: Exception) -> tuple[str, str]:
 
     if isinstance(
         error,
-        (RunMessageBoundaryError, UnsupportedMessageRoleError),
+        (
+            RunMessageBoundaryError,
+            RunWorkspaceNotFoundError,
+            UnsupportedMessageRoleError,
+        ),
     ):
         return (
             "invalid_run_context",
@@ -275,7 +281,13 @@ async def execute_text_run(
     database_session.commit()
 
     try:
-        registry = tool_registry or create_default_tool_registry()
+        workspace = load_run_workspace(
+            database_session,
+            agent_run=agent_run,
+        )
+        registry = tool_registry or create_default_tool_registry(
+            workspace_root=workspace.root_path,
+        )
         run_messages = load_run_messages(
             database_session,
             agent_run=agent_run,

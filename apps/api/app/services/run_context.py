@@ -1,11 +1,43 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AgentRun, Message
+from app.models import AgentRun, AgentSession, Message, Workspace
 
 
 class RunMessageBoundaryError(Exception):
     pass
+
+
+class RunWorkspaceNotFoundError(Exception):
+    pass
+
+
+def load_run_workspace(
+    database_session: Session,
+    *,
+    agent_run: AgentRun,
+) -> Workspace:
+    agent_session = database_session.get(
+        AgentSession,
+        agent_run.session_id,
+    )
+
+    if agent_session is None:
+        raise RunWorkspaceNotFoundError(
+            "Run agent session was not found."
+        )
+
+    workspace = database_session.get(
+        Workspace,
+        agent_session.workspace_id,
+    )
+
+    if workspace is None:
+        raise RunWorkspaceNotFoundError(
+            "Run workspace was not found."
+        )
+
+    return workspace
 
 
 def load_run_messages(

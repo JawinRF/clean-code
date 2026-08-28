@@ -237,7 +237,7 @@
 
 .project-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 5px;
   width: 100%;
@@ -268,6 +268,98 @@
   width: 24px;
   height: 24px;
   color: var(--text-muted);
+}
+
+.tree-chevron {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  transition: transform 120ms ease;
+}
+
+.project-row[data-active] > .tree-chevron,
+.workspace-row[data-active] > .tree-chevron {
+  transform: rotate(90deg);
+}
+
+.workspace-tree {
+  margin: 2px 0 5px 19px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.workspace-group + .workspace-group {
+  margin-top: 2px;
+}
+
+.workspace-row,
+.session-row {
+  display: grid;
+  align-items: center;
+  width: 100%;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-row {
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  gap: 4px;
+  height: 34px;
+}
+
+.session-row {
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 3px;
+  height: 32px;
+  padding-left: 11px;
+  color: var(--text-muted);
+}
+
+.workspace-row > span:nth-child(2),
+.session-row > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-row:hover,
+.session-row:hover,
+.session-row[data-active] {
+  background: var(--surface-hover-soft);
+  color: var(--text-primary);
+}
+
+.workspace-row[data-active] {
+  color: var(--text-primary);
+}
+
+.workspace-icon,
+.session-icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.workspace-row[data-active] .workspace-icon,
+.session-row[data-active] .session-icon {
+  color: var(--accent);
+}
+
+.session-list {
+  margin-left: 11px;
+}
+
+.tree-status {
+  padding: 7px 9px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .sidebar-empty {
@@ -426,6 +518,119 @@
   margin-top: 11px;
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.session-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.session-context {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.session-context .eyebrow {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.session-context h1 {
+  margin: 0 0 5px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 520;
+  line-height: 25px;
+}
+
+.session-context > p:last-child {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.transcript-message {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 11px;
+  min-width: 0;
+}
+
+.message-author-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.message-author-mark .product-logo {
+  width: 39px;
+  transform: translate(-6.5px, -6.5px);
+}
+
+.message-body {
+  min-width: 0;
+}
+
+.message-body header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+}
+
+.message-body strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.message-body time {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.message-body > p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.transcript-message[data-role='user'] .message-body {
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.transcript-status {
+  padding: 10px 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .activity-group {

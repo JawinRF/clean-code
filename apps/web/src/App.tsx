@@ -450,8 +450,10 @@ function App() {
           <span className="brand-mark">
             <img className="product-logo" src="/clean-code-logo.png" alt="" />
           </span>
-          <span>
-            <strong>Clean Code</strong>
+          <span className="brand-copy">
+            <span className="brand-wordmark">
+              <img src="/clean-code-wordmark.png" alt="Clean Code" />
+            </span>
             <small>Agent workspace</small>
           </span>
         </div>

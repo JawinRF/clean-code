@@ -50,6 +50,26 @@
   mix-blend-mode: screen;
 }
 
+.brand-copy {
+  gap: 0;
+}
+
+.brand-wordmark {
+  display: block;
+  width: 116px;
+  height: 24px;
+  overflow: hidden;
+}
+
+.brand-wordmark img {
+  display: block;
+  width: 145px;
+  max-width: none;
+  transform: translate(-14.5px, -12px);
+  filter: invert(1) contrast(1.06);
+  mix-blend-mode: screen;
+}
+
 .sidebar-brand > span:last-child,
 .agent-title > div,
 .sidebar-footer-copy,
@@ -59,7 +79,6 @@
   flex-direction: column;
 }
 
-.sidebar-brand strong,
 .agent-title strong,
 .sidebar-footer strong,
 .project-row strong {

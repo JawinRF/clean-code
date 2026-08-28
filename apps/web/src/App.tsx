@@ -12,6 +12,7 @@ import {
   type AgentRunResponse,
   type AgentSessionResponse,
   type MessageResponse,
+  type ModelCatalogResponse,
   type RunEventResponse,
   type WorkspaceResponse,
 } from './api';
@@ -41,14 +42,17 @@ type ActiveTurn = {
   sessionId: string;
 };
 
-const MODEL_OPTIONS = [
-  {
-    key: 'anthropic:claude-haiku-4-5-20251001',
-    provider: 'anthropic',
-    model: 'claude-haiku-4-5-20251001',
-    label: 'Claude Haiku 4.5',
-  },
-] as const;
+type ModelOption = {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  label: string;
+};
+
+type ModelSelection = {
+  providerId: string;
+  modelId: string;
+};
 
 const TERMINAL_RUN_STATUSES = new Set([
   'completed',
@@ -168,6 +172,19 @@ function runEventText(events: RunEventResponse[]): string {
     .join('');
 }
 
+function modelOptions(
+  catalog: ModelCatalogResponse | null,
+): ModelOption[] {
+  return catalog?.providers.flatMap((provider) => (
+    provider.models.map((model) => ({
+      providerId: provider.id,
+      providerLabel: provider.label,
+      modelId: model.id,
+      label: model.label,
+    }))
+  )) ?? [];
+}
+
 function App() {
   const [apiStatus, setApiStatus] = useState('Not checked');
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
@@ -187,16 +204,20 @@ function App() {
   const [messages, setMessages] = useState<MessageResponse[]>([]);
   const [messagesStatus, setMessagesStatus] = useState('Messages not loaded');
   const [draft, setDraft] = useState('');
-  const [selectedModelKey, setSelectedModelKey] = useState('');
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalogResponse | null>(null);
+  const [modelsStatus, setModelsStatus] = useState('Models not loaded');
+  const [selectedModel, setSelectedModel] = useState<ModelSelection | null>(null);
+  const [modelSearch, setModelSearch] = useState('');
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [activeTurn, setActiveTurn] = useState<ActiveTurn | null>(null);
   const [runEvents, setRunEvents] = useState<RunEventResponse[]>([]);
   const [turnStatus, setTurnStatus] = useState('Ready');
   const [turnError, setTurnError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
-  const conversationRef = useRef<HTMLElement | null>(null);
   const conversationEndRef = useRef<HTMLDivElement | null>(null);
   const followConversationRef = useRef(true);
+  const modelMenuRef = useRef<HTMLDivElement | null>(null);
 
   async function checkApi() {
     setApiStatus('Checking...');
@@ -232,6 +253,34 @@ function App() {
       window.clearTimeout(timeoutId);
     }
   }
+
+  const loadModels = useCallback(async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+    setModelsStatus('Loading models...');
+
+    try {
+      const catalog = await getApiJson<ModelCatalogResponse>(
+        '/api/v1/models',
+        controller.signal,
+      );
+      const modelCount = catalog.providers.reduce(
+        (count, provider) => count + provider.models.length,
+        0,
+      );
+
+      setModelCatalog(catalog);
+      setModelsStatus(
+        modelCount === 0
+          ? 'No models configured'
+          : `${modelCount} model${modelCount === 1 ? '' : 's'} configured`,
+      );
+    } catch (error) {
+      setModelsStatus(`Loading failed: ${requestErrorMessage(error)}`);
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }, []);
 
   const loadProjects = useCallback(async () => {
     setProjectsStatus('Loading projects...');
@@ -272,8 +321,40 @@ function App() {
   }, []);
 
   useEffect(() => {
+    void loadModels();
+  }, [loadModels]);
+
+  useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    if (!isModelMenuOpen) return undefined;
+
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node
+        && !modelMenuRef.current?.contains(event.target)
+      ) {
+        setIsModelMenuOpen(false);
+        setModelSearch('');
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsModelMenuOpen(false);
+        setModelSearch('');
+      }
+    };
+
+    document.addEventListener('pointerdown', closeOnPointerDown);
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isModelMenuOpen]);
 
   useEffect(() => {
     if (
@@ -592,14 +673,17 @@ function App() {
     event.preventDefault();
 
     const text = draft.trim();
-    const selectedModel = MODEL_OPTIONS.find(
-      (modelOption) => modelOption.key === selectedModelKey,
-    );
+    const selectedModelOption = selectedModel === null
+      ? undefined
+      : modelOptions(modelCatalog).find((modelOption) => (
+          modelOption.providerId === selectedModel.providerId
+          && modelOption.modelId === selectedModel.modelId
+        ));
 
     if (
       text.length === 0
       || selectedSessionId === null
-      || selectedModel === undefined
+      || selectedModelOption === undefined
       || activeTurn !== null
       || isSubmitting
     ) return;
@@ -628,8 +712,8 @@ function App() {
         `/api/v1/sessions/${selectedSessionId}/runs`,
         {
           trigger_message_id: userMessage.id,
-          model_provider: selectedModel.provider,
-          model_name: selectedModel.model,
+          model_provider: selectedModelOption.providerId,
+          model_name: selectedModelOption.modelId,
         },
         controller.signal,
       );
@@ -689,13 +773,24 @@ function App() {
   const selectedSession = agentSessions.find(
     (agentSession) => agentSession.id === selectedSessionId,
   ) ?? null;
-  const selectedModel = MODEL_OPTIONS.find(
-    (modelOption) => modelOption.key === selectedModelKey,
-  );
+  const configuredModels = modelOptions(modelCatalog);
+  const selectedModelOption = selectedModel === null
+    ? undefined
+    : configuredModels.find((modelOption) => (
+        modelOption.providerId === selectedModel.providerId
+        && modelOption.modelId === selectedModel.modelId
+      ));
+  const normalizedModelSearch = modelSearch.trim().toLowerCase();
+  const filteredModels = configuredModels.filter((modelOption) => (
+    normalizedModelSearch.length === 0
+    || modelOption.label.toLowerCase().includes(normalizedModelSearch)
+    || modelOption.modelId.toLowerCase().includes(normalizedModelSearch)
+    || modelOption.providerLabel.toLowerCase().includes(normalizedModelSearch)
+  ));
   const liveAssistantText = runEventText(runEvents);
   const turnIsActive = isSubmitting || activeTurn !== null;
   const canSend = selectedSession !== null
-    && selectedModel !== undefined
+    && selectedModelOption !== undefined
     && draft.trim().length > 0
     && !turnIsActive;
 
@@ -705,7 +800,7 @@ function App() {
       ? 'Select a workspace to continue'
       : selectedSession === null
         ? 'Select a session to continue'
-        : selectedModel === undefined
+        : selectedModelOption === undefined
           ? 'Select a model to start'
           : turnIsActive
             ? 'Wait for the current response'
@@ -888,7 +983,7 @@ function App() {
             </div>
           </div>
           <div className="header-actions">
-            <span className="model-chip">{selectedModel?.label ?? 'Model not selected'}</span>
+            <span className="model-chip">{selectedModelOption?.label ?? 'Model not selected'}</span>
             <button className="icon-button" type="button" aria-label="Refresh project data" onClick={loadProjects} disabled={turnIsActive}>
               <Icon name="refresh" size={15} />
             </button>
@@ -896,7 +991,6 @@ function App() {
         </header>
 
         <section
-          ref={conversationRef}
           className="conversation"
           aria-label="Agent conversation"
           onScroll={(event) => {
@@ -1062,20 +1156,86 @@ function App() {
                 <button type="button" className="composer-icon-button" disabled aria-label="Add context">
                   <Icon name="plus" size={16} />
                 </button>
-                <select
-                  className="model-select"
-                  aria-label="Model"
-                  value={selectedModelKey}
-                  onChange={(event) => setSelectedModelKey(event.target.value)}
-                  disabled={selectedSession === null || turnIsActive}
-                >
-                  <option value="">Select model</option>
-                  {MODEL_OPTIONS.map((modelOption) => (
-                    <option value={modelOption.key} key={modelOption.key}>
-                      {modelOption.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="model-picker" ref={modelMenuRef}>
+                  <button
+                    type="button"
+                    className="model-trigger"
+                    aria-label="Select model"
+                    aria-haspopup="listbox"
+                    aria-expanded={isModelMenuOpen}
+                    onClick={() => setIsModelMenuOpen((isOpen) => !isOpen)}
+                    disabled={selectedSession === null || turnIsActive}
+                  >
+                    <span>{selectedModelOption?.label ?? 'Select model'}</span>
+                    <span className="model-trigger-chevron">
+                      <Icon name="chevron" size={12} />
+                    </span>
+                  </button>
+
+                  {isModelMenuOpen && (
+                    <div className="model-menu">
+                      <input
+                        className="model-search"
+                        type="search"
+                        value={modelSearch}
+                        onChange={(event) => setModelSearch(event.target.value)}
+                        placeholder="Search models"
+                        aria-label="Search models"
+                        autoFocus
+                      />
+                      <div className="model-menu-heading">Models</div>
+                      <div className="model-option-list" role="listbox" aria-label="Configured models">
+                        {filteredModels.map((modelOption) => {
+                          const isSelected = selectedModelOption?.providerId === modelOption.providerId
+                            && selectedModelOption.modelId === modelOption.modelId;
+
+                          return (
+                            <button
+                              type="button"
+                              className="model-option"
+                              data-selected={isSelected || undefined}
+                              role="option"
+                              aria-selected={isSelected}
+                              key={`${modelOption.providerId}:${modelOption.modelId}`}
+                              onClick={() => {
+                                setSelectedModel({
+                                  providerId: modelOption.providerId,
+                                  modelId: modelOption.modelId,
+                                });
+                                setIsModelMenuOpen(false);
+                                setModelSearch('');
+                              }}
+                            >
+                              <span className="model-option-copy">
+                                <strong>{modelOption.label}</strong>
+                                <small>{modelOption.providerLabel}</small>
+                              </span>
+                              {isSelected && <Icon name="check" size={14} />}
+                            </button>
+                          );
+                        })}
+                        {filteredModels.length === 0 && (
+                          <p className="model-menu-empty">
+                            {configuredModels.length === 0
+                              ? modelsStatus
+                              : 'No matching models'}
+                          </p>
+                        )}
+                      </div>
+                      <div className="model-menu-footer">
+                        <span>{modelsStatus}</span>
+                        <button
+                          type="button"
+                          onClick={() => void loadModels()}
+                          aria-label="Reload model catalog"
+                        >
+                          <Icon name="refresh" size={13} />
+                          Reload
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               {activeTurn !== null ? (
                 <button

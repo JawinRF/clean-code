@@ -28,6 +28,18 @@ export type MessageResponse = {
   created_at: string;
 };
 
+export type ModelCatalogResponse = {
+  schema_version: 1;
+  providers: Array<{
+    id: string;
+    label: string;
+    models: Array<{
+      id: string;
+      label: string;
+    }>;
+  }>;
+};
+
 export type AgentRunStatus =
   | 'queued'
   | 'running'

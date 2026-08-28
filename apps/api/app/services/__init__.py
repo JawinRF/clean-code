@@ -2,6 +2,11 @@ from app.services.provider_requests import (
     UnsupportedMessageRoleError,
     build_provider_request,
 )
+from app.services.model_catalog import (
+    ModelCatalogConfigurationError,
+    load_model_catalog,
+    model_is_configured,
+)
 from app.services.run_context import (
     RunMessageBoundaryError,
     RunWorkspaceNotFoundError,
@@ -52,6 +57,7 @@ __all__ = [
     "AgentRunNotFoundError",
     "AssembledToolCall",
     "InvalidWorkspaceRootError",
+    "ModelCatalogConfigurationError",
     "InvalidWorkspacePathError",
     "ProviderStreamProtocolError",
     "RunAlreadyFinishedError",
@@ -74,8 +80,10 @@ __all__ = [
     "execute_tool_call",
     "fail_agent_run",
     "load_run_messages",
+    "load_model_catalog",
     "load_run_workspace",
     "request_run_cancellation",
+    "model_is_configured",
     "resolve_workspace_root",
     "resolve_workspace_path",
     "start_agent_run",

@@ -26,6 +26,7 @@ from app.schemas import (
     AgentSessionResponse,
     MessageCreate,
     MessageResponse,
+    ModelCatalogResponse,
     ProjectCreate,
     ProjectResponse,
     RunEventResponse,
@@ -40,6 +41,8 @@ from app.services import (
     RunTaskSupervisor,
     RunTaskSupervisorClosedError,
     append_run_event,
+    load_model_catalog,
+    model_is_configured,
     request_run_cancellation,
     resolve_workspace_root,
 )
@@ -50,6 +53,7 @@ DatabaseSession = Annotated[Session, Depends(get_database_session)]
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    load_model_catalog()
     run_task_supervisor = RunTaskSupervisor()
     application.state.run_task_supervisor = run_task_supervisor
 
@@ -156,6 +160,14 @@ def create_project(
     session.refresh(project)
 
     return project
+
+
+@app.get(
+    "/api/v1/models",
+    response_model=ModelCatalogResponse,
+)
+def list_models() -> ModelCatalogResponse:
+    return load_model_catalog()
 
 
 @app.get(
@@ -386,6 +398,16 @@ def create_agent_run(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent session not found.",
+        )
+
+    if not model_is_configured(
+        load_model_catalog(),
+        provider_id=payload.model_provider,
+        model_id=payload.model_name,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="The selected model is not configured.",
         )
 
     if payload.trigger_message_id is not None:

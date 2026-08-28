@@ -39,7 +39,9 @@ from app.services.tool_calls import (
 )
 from app.services.tool_execution import execute_tool_call
 from app.services.workspace_paths import (
+    InvalidWorkspacePathError,
     InvalidWorkspaceRootError,
+    resolve_workspace_path,
     resolve_workspace_root,
 )
 
@@ -48,6 +50,7 @@ __all__ = [
     "AgentRunNotFoundError",
     "AssembledToolCall",
     "InvalidWorkspaceRootError",
+    "InvalidWorkspacePathError",
     "ProviderStreamProtocolError",
     "RunAlreadyFinishedError",
     "RunCannotFinishError",
@@ -70,5 +73,6 @@ __all__ = [
     "load_run_messages",
     "request_run_cancellation",
     "resolve_workspace_root",
+    "resolve_workspace_path",
     "start_agent_run",
 ]

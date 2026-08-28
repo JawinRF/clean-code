@@ -10,17 +10,36 @@ class ProviderMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolDefinition:
+    name: str
+    description: str
+    input_schema: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderRequest:
     model: str
     messages: tuple[ProviderMessage, ...]
     max_output_tokens: int
     system: str | None = None
+    tools: tuple[ToolDefinition, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class TextDelta:
     text: str
     type: Literal["text.delta"] = field(default="text.delta", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallDelta:
+    call_id: str
+    arguments_delta: str
+    name: str | None = None
+    type: Literal["tool_call.delta"] = field(
+        default="tool_call.delta",
+        init=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +51,7 @@ class ResponseCompleted:
     )
 
 
-ProviderEvent = TextDelta | ResponseCompleted
+ProviderEvent = TextDelta | ToolCallDelta | ResponseCompleted
 
 
 class LlmAdapter(Protocol):

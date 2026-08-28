@@ -5,6 +5,8 @@ from app.providers.base import (
     ProviderRequest,
     ResponseCompleted,
     TextDelta,
+    ToolCallDelta,
+    ToolDefinition,
 )
 
 __all__ = [
@@ -14,4 +16,6 @@ __all__ = [
     "ProviderRequest",
     "ResponseCompleted",
     "TextDelta",
+    "ToolCallDelta",
+    "ToolDefinition",
 ]

@@ -30,6 +30,11 @@ class AgentRunExecute(BaseModel):
     max_output_tokens: int = Field(
         gt=0,
     )
+    max_steps: int = Field(
+        default=8,
+        gt=0,
+        le=32,
+    )
 
 
 class AgentRunResponse(BaseModel):

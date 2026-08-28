@@ -56,6 +56,7 @@ class RunTaskSupervisor:
         *,
         run_id: UUID,
         max_output_tokens: int,
+        max_steps: int,
         system: str | None = None,
     ) -> asyncio.Task[None]:
         if self._closed:
@@ -67,6 +68,9 @@ class RunTaskSupervisor:
             raise ValueError(
                 "max_output_tokens must be greater than zero."
             )
+
+        if max_steps <= 0:
+            raise ValueError("max_steps must be greater than zero.")
 
         existing_task = self._tasks.get(run_id)
 
@@ -82,6 +86,7 @@ class RunTaskSupervisor:
             self._execute(
                 run_id=run_id,
                 max_output_tokens=max_output_tokens,
+                max_steps=max_steps,
                 system=system,
             ),
             name=f"agent-run:{run_id}",
@@ -127,6 +132,7 @@ class RunTaskSupervisor:
         *,
         run_id: UUID,
         max_output_tokens: int,
+        max_steps: int,
         system: str | None,
     ) -> None:
         with self._session_factory() as database_session:
@@ -135,6 +141,7 @@ class RunTaskSupervisor:
                     database_session,
                     run_id=run_id,
                     max_output_tokens=max_output_tokens,
+                    max_steps=max_steps,
                     system=system,
                     adapter_factory=self._adapter_factory,
                 )

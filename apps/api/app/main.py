@@ -509,6 +509,7 @@ async def execute_agent_run(
         run_tasks.start(
             run_id=run_id,
             max_output_tokens=payload.max_output_tokens,
+            max_steps=payload.max_steps,
         )
     except RunTaskAlreadyActiveError as error:
         raise HTTPException(

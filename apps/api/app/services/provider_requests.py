@@ -6,6 +6,7 @@ from app.providers import (
     ProviderMessage,
     ProviderRequest,
     ProviderTextBlock,
+    ToolDefinition,
 )
 from app.schemas.message import MessageContent
 
@@ -20,6 +21,7 @@ def build_provider_request(
     messages: Sequence[Message],
     max_output_tokens: int,
     system: str | None = None,
+    tools: tuple[ToolDefinition, ...] = (),
 ) -> ProviderRequest:
     provider_messages: list[ProviderMessage] = []
 
@@ -50,4 +52,5 @@ def build_provider_request(
         messages=tuple(provider_messages),
         max_output_tokens=max_output_tokens,
         system=system,
+        tools=tools,
     )

@@ -72,6 +72,16 @@ export type RunEventResponse = {
   created_at: string;
 };
 
+export type ToolApprovalResponse = {
+  id: string;
+  run_id: string;
+  call_id: string;
+  tool_name: string;
+  reason: string;
+  arguments: Record<string, unknown>;
+  requested_at: string;
+};
+
 type ApiErrorResponse = {
   detail?: unknown;
 };
@@ -122,6 +132,25 @@ export async function postApiJson<T>(
   }
 
   return response.json() as Promise<T>;
+}
+
+export async function postApi(
+  path: string,
+  body: unknown,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response));
+  }
 }
 
 export async function patchApiJson<T>(

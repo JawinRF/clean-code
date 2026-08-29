@@ -13,12 +13,14 @@ import {
   deleteApi,
   getApiJson,
   patchApiJson,
+  postApi,
   postApiJson,
   type AgentRunResponse,
   type AgentSessionResponse,
   type MessageResponse,
   type ModelCatalogResponse,
   type RunEventResponse,
+  type ToolApprovalResponse,
   type WorkspaceResponse,
 } from './api';
 import {
@@ -81,6 +83,8 @@ type ResourceActionMenu = Pick<ManagedResource, 'kind' | 'id'>;
 type ManagementDialog = ManagedResource & {
   action: 'rename' | 'delete';
 };
+
+type ToolApprovalDecision = 'approved' | 'rejected';
 
 const TERMINAL_RUN_STATUSES = new Set([
   'completed',
@@ -235,6 +239,108 @@ function ActivityRow({
   );
 }
 
+function approvalActionLabel(toolName: string): string {
+  if (toolName === 'write_file') return 'Create a new file';
+  if (toolName === 'edit_file') return 'Edit an existing file';
+
+  return `Run ${toolName}`;
+}
+
+function approvalTargetPath(approval: ToolApprovalResponse): string | null {
+  const path = approval.arguments.path;
+  return typeof path === 'string' ? path : null;
+}
+
+function ApprovalPanel({
+  approval,
+  answeringDecision,
+  isStopping,
+  error,
+  onDecision,
+  onStop,
+}: {
+  approval: ToolApprovalResponse;
+  answeringDecision: ToolApprovalDecision | null;
+  isStopping: boolean;
+  error: string | null;
+  onDecision: (decision: ToolApprovalDecision) => void;
+  onStop: () => void;
+}) {
+  const targetPath = approvalTargetPath(approval);
+  const isAnswering = answeringDecision !== null;
+
+  return (
+    <section className="approval-panel" aria-labelledby="approval-title">
+      <div className="approval-strip">
+        <span className="approval-strip-label">
+          <span className="approval-dot" />
+          Waiting for approval
+        </span>
+        <button
+          type="button"
+          className="approval-stop"
+          aria-label="Stop response"
+          title="Stop response"
+          onClick={onStop}
+          disabled={isStopping || isAnswering}
+        >
+          <Icon name="stop" size={13} />
+        </button>
+      </div>
+      <div className="approval-body">
+        <div className="approval-heading">
+          <span className="approval-tool-icon">
+            <Icon name="terminal" size={14} />
+          </span>
+          <div>
+            <strong id="approval-title">
+              {approvalActionLabel(approval.tool_name)}
+            </strong>
+            <small>{approval.reason}</small>
+          </div>
+        </div>
+        {targetPath !== null && (
+          <code className="approval-target">{targetPath}</code>
+        )}
+        <pre
+          className="approval-arguments"
+          tabIndex={0}
+          aria-label="Exact tool arguments"
+        >
+          {JSON.stringify(approval.arguments, null, 2)}
+        </pre>
+        {error !== null && (
+          <p className="approval-error" role="alert">{error}</p>
+        )}
+      </div>
+      <div className="approval-actions">
+        <button
+          type="button"
+          className="button approval-reject"
+          onClick={() => onDecision('rejected')}
+          disabled={isAnswering || isStopping}
+        >
+          {answeringDecision === 'rejected'
+            ? <span className="button-spinner" />
+            : <Icon name="close" size={13} />}
+          Reject
+        </button>
+        <button
+          type="button"
+          className="button button--primary approval-allow"
+          onClick={() => onDecision('approved')}
+          disabled={isAnswering || isStopping}
+        >
+          {answeringDecision === 'approved'
+            ? <span className="button-spinner" />
+            : <Icon name="check" size={13} />}
+          Allow once
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function statusTone(value: string): StatusTone {
   const normalized = value.toLowerCase();
 
@@ -349,6 +455,12 @@ function App() {
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [activeTurn, setActiveTurn] = useState<ActiveTurn | null>(null);
   const [runEvents, setRunEvents] = useState<RunEventResponse[]>([]);
+  const [pendingToolApprovals, setPendingToolApprovals] = useState<ToolApprovalResponse[]>([]);
+  const [answeringApproval, setAnsweringApproval] = useState<{
+    id: string;
+    decision: ToolApprovalDecision;
+  } | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [turnStatus, setTurnStatus] = useState('Ready');
   const [turnError, setTurnError] = useState<string | null>(null);
   const [retryTurn, setRetryTurn] = useState<RetryTurn | null>(null);
@@ -805,6 +917,12 @@ function App() {
   }, [isNewConversation, selectedSessionId]);
 
   useEffect(() => {
+    setPendingToolApprovals([]);
+    setAnsweringApproval(null);
+    setApprovalError(null);
+  }, [activeTurn]);
+
+  useEffect(() => {
     const conversation = conversationRef.current;
 
     if (!followConversationRef.current || conversation === null) return;
@@ -836,7 +954,7 @@ function App() {
       );
 
       try {
-        const [run, events] = await Promise.all([
+        const [run, events, approvals] = await Promise.all([
           getApiJson<AgentRunResponse>(
             `/api/v1/runs/${activeTurn.runId}`,
             requestController.signal,
@@ -845,11 +963,27 @@ function App() {
             `/api/v1/runs/${activeTurn.runId}/events`,
             requestController.signal,
           ),
+          getApiJson<ToolApprovalResponse[]>(
+            `/api/v1/runs/${activeTurn.runId}/approvals`,
+            requestController.signal,
+          ),
         ]);
 
         if (!active) return;
 
         setRunEvents(events);
+        setPendingToolApprovals(approvals);
+        setAnsweringApproval((currentApproval) => (
+          currentApproval !== null
+          && approvals.some((approval) => approval.id === currentApproval.id)
+            ? currentApproval
+            : null
+        ));
+
+        if (approvals.length === 0) {
+          setApprovalError(null);
+        }
+
         setTurnError(null);
 
         if (TERMINAL_RUN_STATUSES.has(run.status)) {
@@ -893,6 +1027,9 @@ function App() {
           }
 
           setActiveTurn(null);
+          setPendingToolApprovals([]);
+          setAnsweringApproval(null);
+          setApprovalError(null);
           setIsStopping(false);
           return;
         }
@@ -900,9 +1037,11 @@ function App() {
         setTurnStatus(
           isStopping
             ? 'Stopping...'
-            : run.status === 'queued'
-              ? 'Starting...'
-              : 'Generating...',
+            : approvals.length > 0
+              ? 'Waiting for approval...'
+              : run.status === 'queued'
+                ? 'Starting...'
+                : 'Generating...',
         );
         schedulePoll(300);
       } catch (error) {
@@ -1558,6 +1697,43 @@ function App() {
     }
   }
 
+  async function decideToolApproval(decision: ToolApprovalDecision) {
+    const approval = pendingToolApprovals[0];
+
+    if (
+      activeTurn === null
+      || approval === undefined
+      || answeringApproval !== null
+      || isStopping
+    ) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+    setAnsweringApproval({ id: approval.id, decision });
+    setApprovalError(null);
+    setTurnStatus(
+      decision === 'approved'
+        ? 'Applying approved action...'
+        : 'Rejecting action...',
+    );
+
+    try {
+      await postApi(
+        `/api/v1/runs/${activeTurn.runId}/approvals/${approval.id}`,
+        { decision },
+        controller.signal,
+      );
+    } catch (error) {
+      setAnsweringApproval(null);
+      setApprovalError(
+        `Approval response failed: ${requestErrorMessage(error)}`,
+      );
+      setTurnStatus('Waiting for approval...');
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId,
   ) ?? null;
@@ -1582,6 +1758,11 @@ function App() {
     || modelOption.providerLabel.toLowerCase().includes(normalizedModelSearch)
   ));
   const liveAssistantText = runEventText(runEvents);
+  const pendingApproval = pendingToolApprovals[0] ?? null;
+  const answeringDecision = pendingApproval !== null
+    && answeringApproval?.id === pendingApproval.id
+    ? answeringApproval.decision
+    : null;
   const turnIsActive = isSubmitting || activeTurn !== null;
   const conversationIsReady = selectedWorkspace !== null
     && (selectedSession !== null || isNewConversation);
@@ -2272,36 +2453,46 @@ function App() {
         )}
 
         <footer className="composer-wrap">
-          <form className="composer" aria-label="Agent composer" onSubmit={sendMessage}>
-            <textarea
-              ref={composerRef}
-              aria-label="Agent request"
-              placeholder={composerPlaceholder}
-              rows={1}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onCompositionStart={() => {
-                composingRef.current = true;
-              }}
-              onCompositionEnd={() => {
-                window.setTimeout(() => {
-                  composingRef.current = false;
-                }, 10);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.shiftKey) return;
-                if (event.nativeEvent.isComposing || composingRef.current) return;
-
-                event.preventDefault();
-
-                if (!event.repeat && canSend) {
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-              disabled={!conversationIsReady}
-              readOnly={turnIsActive}
+          {pendingApproval !== null ? (
+            <ApprovalPanel
+              approval={pendingApproval}
+              answeringDecision={answeringDecision}
+              isStopping={isStopping}
+              error={approvalError}
+              onDecision={(decision) => void decideToolApproval(decision)}
+              onStop={() => void stopAgent()}
             />
-            <div className="composer-toolbar">
+          ) : (
+            <form className="composer" aria-label="Agent composer" onSubmit={sendMessage}>
+              <textarea
+                ref={composerRef}
+                aria-label="Agent request"
+                placeholder={composerPlaceholder}
+                rows={1}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onCompositionStart={() => {
+                  composingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  window.setTimeout(() => {
+                    composingRef.current = false;
+                  }, 10);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey) return;
+                  if (event.nativeEvent.isComposing || composingRef.current) return;
+
+                  event.preventDefault();
+
+                  if (!event.repeat && canSend) {
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                disabled={!conversationIsReady}
+                readOnly={turnIsActive}
+              />
+              <div className="composer-toolbar">
               <div className="composer-options">
                 <button type="button" className="composer-icon-button" disabled aria-label="Add context">
                   <Icon name="plus" size={16} />
@@ -2408,14 +2599,19 @@ function App() {
                   <Icon name="arrow-up" size={17} />
                 </button>
               )}
-            </div>
-          </form>
+              </div>
+            </form>
+          )}
           <div className="composer-feedback" data-error={turnError !== null || undefined} role="status">
             <span>
               {turnError
-                ?? (conversationIsReady
-                  ? `${turnStatus} · Enter to send, Shift+Enter for a new line`
-                  : 'Choose a project and workspace to start a conversation.')}
+                ?? (pendingApproval !== null
+                  ? answeringDecision !== null
+                    ? turnStatus
+                    : 'Review the requested file operation before the agent can continue.'
+                  : conversationIsReady
+                    ? `${turnStatus} · Enter to send, Shift+Enter for a new line`
+                    : 'Choose a project and workspace to start a conversation.')}
             </span>
             {retryTurn !== null && activeTurn === null && (
               <button type="button" onClick={() => void retryAgentResponse()} disabled={isSubmitting}>

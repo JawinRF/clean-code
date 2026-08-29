@@ -1,0 +1,43 @@
+.clean-code-logo {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.clean-code-logo__body {
+  transform-origin: 50% 50%;
+}
+
+.clean-code-logo__spine {
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+
+.clean-code-logo--thinking {
+}
+
+.clean-code-logo--streaming {
+}
+
+.clean-code-logo--idle {
+}
+
+.brand-mark .clean-code-logo,
+.setup-logo .clean-code-logo,
+.empty-logo .clean-code-logo,
+.message-author-mark .clean-code-logo {
+  color: #f1f2f1;
+}
+
+.brand-mark:has(.clean-code-logo),
+.setup-logo:has(.clean-code-logo),
+.empty-logo:has(.clean-code-logo),
+.message-author-mark:has(.clean-code-logo) {
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clean-code-logo__body {
+    transform: none !important;
+  }
+}

@@ -27,6 +27,7 @@ import {
   AssistantMessageContent,
   UserMessageContent,
 } from './MessageContent';
+import { CleanCodeLogo } from './components/CleanCodeLogo';
 import './App.css';
 
 type ReadyResponse = {
@@ -1784,7 +1785,12 @@ function App() {
       <aside className="sidebar" data-open={isSidebarOpen || undefined}>
         <div className="sidebar-brand">
           <span className="brand-mark">
-            <img className="product-logo" src="/clean-code-logo.png" alt="" />
+            <CleanCodeLogo
+              size={24}
+              status={
+                activeTurn ? (liveAssistantText ? 'streaming' : 'thinking') : 'idle'
+              }
+            />
           </span>
           <span className="brand-copy">
             <span className="brand-wordmark">
@@ -2283,7 +2289,7 @@ function App() {
             {!conversationIsReady ? (
               <div className="setup-state">
                 <span className="setup-logo">
-                  <img className="product-logo" src="/clean-code-logo.png" alt="" />
+                  <CleanCodeLogo size={48} status="idle" />
                 </span>
                 <p className="eyebrow">Local agent workspace</p>
                 <h1>
@@ -2326,7 +2332,7 @@ function App() {
             ) : messages.length === 0 && activeTurn === null && liveAssistantText.length === 0 ? (
               <div className="empty-conversation">
                 <span className="empty-logo">
-                  <img className="product-logo" src="/clean-code-logo.png" alt="" />
+                  <CleanCodeLogo size={48} status="idle" />
                 </span>
                 <h1>What can I help you build?</h1>
                 <p>{selectedWorkspace?.name} · Your conversation is stored in PostgreSQL.</p>
@@ -2386,7 +2392,10 @@ function App() {
                     aria-live="polite"
                   >
                     <span className="message-author-mark">
-                      <img className="product-logo" src="/clean-code-logo.png" alt="" />
+                      <CleanCodeLogo
+                        size={28}
+                        status={liveAssistantText ? 'streaming' : 'thinking'}
+                      />
                     </span>
                     <div className="message-body">
                       <div className="live-state">

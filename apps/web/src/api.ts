@@ -82,6 +82,31 @@ export type ToolApprovalResponse = {
   requested_at: string;
 };
 
+export type GitDiffLineResponse = {
+  old_line_number: number | null;
+  new_line_number: number | null;
+  type: 'context' | 'addition' | 'deletion';
+  content: string;
+};
+
+export type GitChangedFileResponse = {
+  path: string;
+  previous_path: string | null;
+  status: 'added' | 'deleted' | 'modified' | 'renamed' | 'untracked';
+  language: string;
+  additions: number;
+  deletions: number;
+  is_binary: boolean;
+  lines: GitDiffLineResponse[];
+};
+
+export type GitChangesResponse = {
+  branch: string;
+  additions: number;
+  deletions: number;
+  files: GitChangedFileResponse[];
+};
+
 type ApiErrorResponse = {
   detail?: unknown;
 };

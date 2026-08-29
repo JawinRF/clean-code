@@ -315,10 +315,26 @@ def revert_git_file(workspace_root: str, path: str) -> GitChangesResponse:
             file_path.unlink()
         except OSError as error:
             raise GitOperationError("Could not remove the untracked file.") from error
+    elif changed_file.previous_path is not None:
+        _git(
+            repository_root,
+            "restore",
+            "--staged",
+            "--",
+            changed_file.previous_path,
+            changed_file.path,
+        )
+        _git(
+            repository_root,
+            "restore",
+            "--source=HEAD",
+            "--worktree",
+            "--",
+            changed_file.previous_path,
+        )
+        if file_path.exists():
+            file_path.unlink()
     else:
-        restore_paths = [changed_file.path]
-        if changed_file.previous_path is not None:
-            restore_paths.append(changed_file.previous_path)
         _git(
             repository_root,
             "restore",
@@ -326,10 +342,8 @@ def revert_git_file(workspace_root: str, path: str) -> GitChangesResponse:
             "--staged",
             "--worktree",
             "--",
-            *restore_paths,
+            changed_file.path,
         )
-        if changed_file.previous_path is not None and file_path.exists():
-            file_path.unlink()
 
     return collect_git_changes(workspace_root)
 
@@ -343,13 +357,27 @@ def commit_git_files(
 ) -> GitChangesResponse:
     repository_root = _repository_root(workspace_root)
     snapshot = collect_git_changes(workspace_root)
-    changed_paths = {changed_file.path for changed_file in snapshot.files}
+    changed_files = {
+        changed_file.path: changed_file for changed_file in snapshot.files
+    }
     selected_paths = list(dict.fromkeys(paths))
 
-    if any(path not in changed_paths for path in selected_paths):
+    if any(path not in changed_files for path in selected_paths):
         raise GitPathError("A selected file is not in the current Git change set.")
 
-    for path in selected_paths:
+    command_paths = list(
+        dict.fromkeys(
+            path
+            for selected_path in selected_paths
+            for path in (
+                changed_files[selected_path].previous_path,
+                selected_path,
+            )
+            if path is not None
+        )
+    )
+
+    for path in command_paths:
         _safe_path(repository_root, path)
 
     clean_message = message.strip()
@@ -374,7 +402,7 @@ def commit_git_files(
         created_branch = True
 
     try:
-        _git(repository_root, "add", "-A", "--", *selected_paths)
+        _git(repository_root, "add", "-A", "--", *command_paths)
         _git(
             repository_root,
             "commit",
@@ -382,7 +410,7 @@ def commit_git_files(
             "-m",
             clean_message,
             "--",
-            *selected_paths,
+            *command_paths,
         )
     except GitOperationError:
         if created_branch and clean_branch_name is not None:

@@ -30,6 +30,7 @@ import {
 import { CleanCodeLogo } from './components/CleanCodeLogo';
 import { ConversationSearchBar } from './components/ConversationSearchBar';
 import { GlobalSearchDialog } from './components/GlobalSearchDialog';
+import { ChangesView, WorkspaceTabs } from './components/ChangesView';
 import { highlightMatch } from './utils/highlightMatch';
 import { messageSearchText } from './utils/transcriptSearch';
 import './App.css';
@@ -486,6 +487,7 @@ function App() {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isConversationSearchOpen, setIsConversationSearchOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<'changes' | 'browser'>('browser');
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
   const [conversationSearchActiveId, setConversationSearchActiveId] = useState<string | null>(null);
   const conversationRef = useRef<HTMLElement | null>(null);
@@ -1449,12 +1451,14 @@ function App() {
     setIsSidebarOpen(false);
     followConversationRef.current = true;
     setShowScrollToBottom(false);
+    setWorkspaceTab('browser');
   }, [activeTurn, isSubmitting, selectedWorkspaceId]);
 
   function selectStoredSession(sessionId: string) {
     setIsNewConversation(false);
     setSelectedSessionId(sessionId);
     setIsSidebarOpen(false);
+    setWorkspaceTab('browser');
   }
 
   useEffect(() => {
@@ -2263,7 +2267,17 @@ function App() {
       />
 
       <main className="agent-area">
-        <header className="agent-header">
+        <WorkspaceTabs
+          activeTab={workspaceTab}
+          onSelectTab={setWorkspaceTab}
+          onNewConversation={startNewConversation}
+          onOpenSidebar={() => setIsSidebarOpen(true)}
+        />
+        {workspaceTab === 'changes' ? (
+          <ChangesView workspace={selectedWorkspace} />
+        ) : (
+          <>
+            <header className="agent-header">
           <button
             className="icon-button sidebar-toggle"
             type="button"
@@ -2724,7 +2738,9 @@ function App() {
               </button>
             )}
           </div>
-        </footer>
+            </footer>
+          </>
+        )}
       </main>
 
       {isGlobalSearchOpen && (

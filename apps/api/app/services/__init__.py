@@ -50,6 +50,7 @@ from app.services.workspace_paths import (
     InvalidWorkspaceRootError,
     resolve_workspace_path,
     resolve_workspace_root,
+    resolve_workspace_write_path,
 )
 
 
@@ -86,5 +87,6 @@ __all__ = [
     "model_is_configured",
     "resolve_workspace_root",
     "resolve_workspace_path",
+    "resolve_workspace_write_path",
     "start_agent_run",
 ]

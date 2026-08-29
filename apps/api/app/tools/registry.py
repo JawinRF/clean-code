@@ -3,8 +3,10 @@ from pathlib import Path
 
 from app.providers import ToolDefinition
 from app.tools.base import AgentTool
+from app.tools.edit_file import EditFileTool
 from app.tools.echo import EchoTool
 from app.tools.list_files import ListFilesTool
+from app.tools.write_file import WriteFileTool
 
 
 class DuplicateToolError(Exception):
@@ -57,5 +59,7 @@ def create_default_tool_registry(
 
     if workspace_root is not None:
         tools.append(ListFilesTool(workspace_root=workspace_root))
+        tools.append(WriteFileTool(workspace_root=workspace_root))
+        tools.append(EditFileTool(workspace_root=workspace_root))
 
     return ToolRegistry(tools)

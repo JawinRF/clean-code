@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -7,6 +8,22 @@ class InvalidWorkspaceRootError(ValueError):
 
 class InvalidWorkspacePathError(ValueError):
     pass
+
+
+def _relative_workspace_path(candidate: str) -> Path:
+    untrusted_path = Path(candidate)
+
+    if untrusted_path.is_absolute() or untrusted_path.drive:
+        raise InvalidWorkspacePathError(
+            "Workspace path must be relative."
+        )
+
+    if os.name == "nt" and os.path.isreserved(candidate):
+        raise InvalidWorkspacePathError(
+            "Workspace path uses a reserved Windows name."
+        )
+
+    return untrusted_path
 
 
 def resolve_workspace_root(raw_path: str) -> str:
@@ -60,12 +77,7 @@ def resolve_workspace_path(
             "Workspace path must not be empty."
         )
 
-    untrusted_path = Path(candidate)
-
-    if untrusted_path.is_absolute() or untrusted_path.drive:
-        raise InvalidWorkspacePathError(
-            "Workspace path must be relative."
-        )
+    untrusted_path = _relative_workspace_path(candidate)
 
     try:
         resolved_root = Path(workspace_root).resolve(strict=True)
@@ -77,5 +89,37 @@ def resolve_workspace_path(
         raise InvalidWorkspacePathError(
             "Workspace path does not exist inside the workspace."
         ) from error
+
+    return resolved_path
+
+
+def resolve_workspace_write_path(
+    workspace_root: str | Path,
+    relative_path: str,
+) -> Path:
+    candidate = relative_path.strip()
+
+    if not candidate:
+        raise InvalidWorkspacePathError(
+            "Workspace path must not be empty."
+        )
+
+    untrusted_path = _relative_workspace_path(candidate)
+
+    try:
+        resolved_root = Path(workspace_root).resolve(strict=True)
+        resolved_path = (resolved_root / untrusted_path).resolve(
+            strict=False
+        )
+        resolved_path.relative_to(resolved_root)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise InvalidWorkspacePathError(
+            "Workspace path must stay inside the workspace."
+        ) from error
+
+    if resolved_path == resolved_root:
+        raise InvalidWorkspacePathError(
+            "Workspace path must identify a file inside the workspace."
+        )
 
     return resolved_path

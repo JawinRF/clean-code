@@ -6,7 +6,9 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
-from time import monotonic
+from threading import Event, Thread
+from time import monotonic, sleep
+from typing import BinaryIO
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -212,46 +214,52 @@ def _resolve_shell(command: str) -> _ShellCommand | None:
     )
 
 
-async def _capture_stream(
-    stream: asyncio.StreamReader,
+def _capture_stream(
+    stream: BinaryIO,
     capture: _TailCapture,
 ) -> None:
-    while chunk := await stream.read(READ_CHUNK_BYTES):
-        capture.append(chunk)
-
-
-async def _finish_output_tasks(
-    *tasks: asyncio.Task[None],
-) -> None:
     try:
-        await asyncio.wait_for(
-            asyncio.gather(*tasks),
-            timeout=PROCESS_EXIT_GRACE_SECONDS,
-        )
-    except TimeoutError:
-        for task in tasks:
-            task.cancel()
-
-        await asyncio.gather(*tasks, return_exceptions=True)
+        while chunk := stream.read(READ_CHUNK_BYTES):
+            capture.append(chunk)
+    except (OSError, ValueError):
+        return
 
 
-async def _wait_for_exit(
-    process: asyncio.subprocess.Process,
+def _finish_output_threads(
+    process: subprocess.Popen[bytes],
+    *threads: Thread,
+) -> None:
+    deadline = monotonic() + PROCESS_EXIT_GRACE_SECONDS
+
+    for thread in threads:
+        remaining = max(0.0, deadline - monotonic())
+        thread.join(remaining)
+
+    if any(thread.is_alive() for thread in threads):
+        if process.stdout is not None:
+            process.stdout.close()
+
+        if process.stderr is not None:
+            process.stderr.close()
+
+        for thread in threads:
+            thread.join(0.25)
+
+
+def _wait_for_exit(
+    process: subprocess.Popen[bytes],
     timeout_seconds: float,
 ) -> bool:
     try:
-        await asyncio.wait_for(
-            process.wait(),
-            timeout=timeout_seconds,
-        )
-    except TimeoutError:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
         return False
 
     return True
 
 
-async def _terminate_process_tree(
-    process: asyncio.subprocess.Process,
+def _terminate_process_tree(
+    process: subprocess.Popen[bytes],
 ) -> None:
     if process.returncode is not None:
         return
@@ -261,21 +269,21 @@ async def _terminate_process_tree(
 
         if taskkill is not None:
             try:
-                killer = await asyncio.create_subprocess_exec(
-                    taskkill,
-                    "/PID",
-                    str(process.pid),
-                    "/T",
-                    "/F",
-                    stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                await asyncio.wait_for(
-                    killer.wait(),
+                subprocess.run(
+                    [
+                        taskkill,
+                        "/PID",
+                        str(process.pid),
+                        "/T",
+                        "/F",
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
                     timeout=PROCESS_EXIT_GRACE_SECONDS,
                 )
-            except (OSError, TimeoutError):
+            except (OSError, subprocess.TimeoutExpired):
                 pass
     else:
         try:
@@ -283,7 +291,7 @@ async def _terminate_process_tree(
         except ProcessLookupError:
             return
 
-    if await _wait_for_exit(process, PROCESS_EXIT_GRACE_SECONDS):
+    if _wait_for_exit(process, PROCESS_EXIT_GRACE_SECONDS):
         return
 
     try:
@@ -294,7 +302,86 @@ async def _terminate_process_tree(
     except ProcessLookupError:
         return
 
-    await process.wait()
+    process.wait()
+
+
+def _run_shell_command_blocking(
+    shell: _ShellCommand,
+    *,
+    workdir: Path,
+    timeout_seconds: int,
+    cancel_event: Event,
+) -> _ShellOutcome:
+    process_arguments = (shell.executable, *shell.arguments)
+    process_options = {
+        "cwd": str(workdir),
+        "env": _safe_environment(),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "bufsize": 0,
+    }
+
+    if os.name == "nt":
+        process = subprocess.Popen(
+            process_arguments,
+            **process_options,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+    else:
+        process = subprocess.Popen(
+            process_arguments,
+            **process_options,
+            start_new_session=True,
+        )
+
+    if process.stdout is None or process.stderr is None:
+        _terminate_process_tree(process)
+        raise RuntimeError("Shell output streams are not available.")
+
+    stdout = _TailCapture(MAX_STREAM_OUTPUT_BYTES)
+    stderr = _TailCapture(MAX_STREAM_OUTPUT_BYTES)
+    stdout_thread = Thread(
+        target=_capture_stream,
+        args=(process.stdout, stdout),
+        name=f"shell-stdout:{process.pid}",
+        daemon=True,
+    )
+    stderr_thread = Thread(
+        target=_capture_stream,
+        args=(process.stderr, stderr),
+        name=f"shell-stderr:{process.pid}",
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    started_at = monotonic()
+    timed_out = False
+
+    while process.poll() is None:
+        if cancel_event.is_set():
+            _terminate_process_tree(process)
+            break
+
+        if monotonic() - started_at >= timeout_seconds:
+            timed_out = True
+            _terminate_process_tree(process)
+            break
+
+        sleep(0.02)
+
+    _finish_output_threads(
+        process,
+        stdout_thread,
+        stderr_thread,
+    )
+    return _ShellOutcome(
+        exit_code=process.returncode,
+        stdout=stdout,
+        stderr=stderr,
+        timed_out=timed_out,
+        duration_seconds=monotonic() - started_at,
+    )
 
 
 async def _run_shell_command(
@@ -303,65 +390,28 @@ async def _run_shell_command(
     workdir: Path,
     timeout_seconds: int,
 ) -> _ShellOutcome:
-    process_arguments = (shell.executable, *shell.arguments)
-    process_options = {
-        "cwd": str(workdir),
-        "env": _safe_environment(),
-        "stdin": asyncio.subprocess.DEVNULL,
-        "stdout": asyncio.subprocess.PIPE,
-        "stderr": asyncio.subprocess.PIPE,
-    }
-
-    if os.name == "nt":
-        process = await asyncio.create_subprocess_exec(
-            *process_arguments,
-            **process_options,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    cancel_event = Event()
+    worker = asyncio.create_task(
+        asyncio.to_thread(
+            _run_shell_command_blocking,
+            shell,
+            workdir=workdir,
+            timeout_seconds=timeout_seconds,
+            cancel_event=cancel_event,
         )
-    else:
-        process = await asyncio.create_subprocess_exec(
-            *process_arguments,
-            **process_options,
-            start_new_session=True,
-        )
-
-    if process.stdout is None or process.stderr is None:
-        await _terminate_process_tree(process)
-        raise RuntimeError("Shell output streams are not available.")
-
-    stdout = _TailCapture(MAX_STREAM_OUTPUT_BYTES)
-    stderr = _TailCapture(MAX_STREAM_OUTPUT_BYTES)
-    stdout_task = asyncio.create_task(
-        _capture_stream(process.stdout, stdout)
     )
-    stderr_task = asyncio.create_task(
-        _capture_stream(process.stderr, stderr)
-    )
-    started_at = monotonic()
-    timed_out = False
 
     try:
-        try:
-            await asyncio.wait_for(
-                process.wait(),
-                timeout=timeout_seconds,
-            )
-        except TimeoutError:
-            timed_out = True
-            await _terminate_process_tree(process)
+        return await asyncio.shield(worker)
     except CancelledError:
-        await _terminate_process_tree(process)
-        await _finish_output_tasks(stdout_task, stderr_task)
-        raise
+        cancel_event.set()
 
-    await _finish_output_tasks(stdout_task, stderr_task)
-    return _ShellOutcome(
-        exit_code=process.returncode,
-        stdout=stdout,
-        stderr=stderr,
-        timed_out=timed_out,
-        duration_seconds=monotonic() - started_at,
-    )
+        try:
+            await asyncio.shield(worker)
+        except Exception:
+            pass
+
+        raise
 
 
 def _render_stream(name: str, capture: _TailCapture) -> str:
@@ -389,13 +439,21 @@ class ShellTool:
         self._workspace_root = Path(workspace_root).resolve(strict=True)
         shell = _resolve_shell("")
         shell_name = shell.display_name if shell is not None else "shell"
+        syntax_guidance = (
+            " This host uses Windows PowerShell 5.1. Do not use && or ||; "
+            "use semicolons and `if ($?) { ... }` for conditional chaining."
+            if shell_name == "Windows PowerShell"
+            else ""
+        )
         self.description = (
             f"Execute one non-interactive {shell_name} command in a fresh "
             "process inside the active workspace. Each call requires user "
             "approval. Use workdir instead of changing directory. Commands "
             "time out, stop when the agent run is cancelled, and return "
             "bounded stdout, stderr, exit code, and duration. Shell state "
-            "does not persist between calls."
+            "does not persist between calls. Do not change global "
+            "configuration or credentials unless the user explicitly asks "
+            f"for that change.{syntax_guidance}"
         )
 
     async def execute(self, arguments: BaseModel) -> ToolResult:

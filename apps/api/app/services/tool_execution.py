@@ -1,9 +1,13 @@
 from collections.abc import Awaitable, Callable
 import json
+import logging
 
 from pydantic import ValidationError
 
 from app.tools import ToolRegistry, ToolResult, UnknownToolError
+
+
+logger = logging.getLogger(__name__)
 
 
 ToolApprovalHandler = Callable[
@@ -69,6 +73,7 @@ async def execute_tool_call(
 
         return await tool.execute(validated_arguments)
     except Exception:
+        logger.exception('Tool execution failed for "%s".', name)
         return ToolResult(
             content="Tool execution failed.",
             is_error=True,

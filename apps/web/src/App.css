@@ -438,7 +438,23 @@
 
 .session-row-shell {
   grid-template-columns: minmax(0, 1fr) 24px;
+  height: 32px;
   min-height: 32px;
+  transform-origin: top center;
+  transition:
+    height 180ms ease,
+    min-height 180ms ease,
+    opacity 140ms ease,
+    transform 180ms ease;
+}
+
+.session-row-shell[data-removing] {
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-6px) scale(0.98);
 }
 
 .tree-row-shell:hover {
@@ -2123,6 +2139,38 @@
   color: var(--text-primary);
 }
 
+@keyframes management-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes management-backdrop-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes management-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes management-dialog-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+
 .management-dialog-backdrop {
   position: fixed;
   z-index: 100;
@@ -2132,6 +2180,11 @@
   padding: 20px;
   background: rgb(0 0 0 / 0.56);
   backdrop-filter: blur(3px);
+  animation: management-backdrop-enter 160ms ease-out both;
+}
+
+.management-dialog-backdrop[data-closing] {
+  animation: management-backdrop-exit 180ms ease-in both;
 }
 
 .management-dialog {
@@ -2144,6 +2197,11 @@
   border-radius: 10px;
   background: var(--surface-raised);
   box-shadow: 0 22px 60px rgb(0 0 0 / 0.48);
+  animation: management-dialog-enter 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.management-dialog-backdrop[data-closing] .management-dialog {
+  animation: management-dialog-exit 180ms ease-in both;
 }
 
 .management-dialog-heading {
@@ -2228,6 +2286,19 @@
   display: flex;
   justify-content: flex-end;
   gap: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-row-shell {
+    transition: none;
+  }
+
+  .management-dialog-backdrop,
+  .management-dialog-backdrop[data-closing],
+  .management-dialog,
+  .management-dialog-backdrop[data-closing] .management-dialog {
+    animation: none;
+  }
 }
 
 @media (max-width: 760px) {

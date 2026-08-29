@@ -93,6 +93,19 @@ const SIDEBAR_MAX_WIDTH = 440;
 const SIDEBAR_DEFAULT_WIDTH = 252;
 const MAIN_CONTENT_MIN_WIDTH = 520;
 const SIDEBAR_KEYBOARD_STEP = 16;
+const MANAGEMENT_TRANSITION_MS = 180;
+
+function interfaceTransitionDuration(): number {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 0
+    : MANAGEMENT_TRANSITION_MS;
+}
+
+function waitForInterfaceTransition(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, interfaceTransitionDuration());
+  });
+}
 
 function maximumSidebarWidth(): number {
   return Math.max(
@@ -349,6 +362,8 @@ function App() {
   const [managementValue, setManagementValue] = useState('');
   const [managementStatus, setManagementStatus] = useState('');
   const [isManagingResource, setIsManagingResource] = useState(false);
+  const [isManagementDialogClosing, setIsManagementDialogClosing] = useState(false);
+  const [removingResource, setRemovingResource] = useState<ResourceActionMenu | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const conversationRef = useRef<HTMLElement | null>(null);
   const followConversationRef = useRef(true);
@@ -356,6 +371,7 @@ function App() {
   const composingRef = useRef(false);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const resourceActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const managementDialogCloseTimerRef = useRef<number | null>(null);
   const sidebarResizeRef = useRef({
     pointerId: null as number | null,
     startX: 0,
@@ -363,6 +379,29 @@ function App() {
     latestX: 0,
   });
   const sidebarResizeFrameRef = useRef<number | null>(null);
+
+  const closeManagementDialog = useCallback(() => {
+    if (
+      managementDialog === null
+      || isManagingResource
+      || isManagementDialogClosing
+    ) return;
+
+    setIsManagementDialogClosing(true);
+    managementDialogCloseTimerRef.current = window.setTimeout(() => {
+      setManagementDialog(null);
+      setManagementStatus('');
+      setIsManagementDialogClosing(false);
+      setRemovingResource(null);
+      managementDialogCloseTimerRef.current = null;
+    }, interfaceTransitionDuration());
+  }, [isManagementDialogClosing, isManagingResource, managementDialog]);
+
+  useEffect(() => () => {
+    if (managementDialogCloseTimerRef.current !== null) {
+      window.clearTimeout(managementDialogCloseTimerRef.current);
+    }
+  }, []);
 
   const checkApi = useCallback(async () => {
     setApiStatus('Checking...');
@@ -557,8 +596,8 @@ function App() {
     if (managementDialog === null) return undefined;
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isManagingResource) {
-        setManagementDialog(null);
+      if (event.key === 'Escape') {
+        closeManagementDialog();
       }
     };
 
@@ -567,7 +606,7 @@ function App() {
     return () => {
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [isManagingResource, managementDialog]);
+  }, [closeManagementDialog, managementDialog]);
 
   useEffect(() => {
     const keepSidebarInRange = () => {
@@ -935,10 +974,17 @@ function App() {
     resource: ManagedResource,
     action: ManagementDialog['action'],
   ) {
+    if (managementDialogCloseTimerRef.current !== null) {
+      window.clearTimeout(managementDialogCloseTimerRef.current);
+      managementDialogCloseTimerRef.current = null;
+    }
+
     setResourceActionMenu(null);
     setManagementDialog({ ...resource, action });
     setManagementValue(resource.label);
     setManagementStatus('');
+    setIsManagementDialogClosing(false);
+    setRemovingResource(null);
   }
 
   async function manageResource(event: FormEvent<HTMLFormElement>) {
@@ -947,6 +993,7 @@ function App() {
     if (
       managementDialog === null
       || isManagingResource
+      || isManagementDialogClosing
       || activeTurn !== null
       || isSubmitting
     ) return;
@@ -965,30 +1012,25 @@ function App() {
       managementDialog.action === 'rename' ? 'Renaming...' : 'Deleting...',
     );
 
+    let updatedProject: ProjectResponse | null = null;
+    let updatedSession: AgentSessionResponse | null = null;
+    let remainingProjects: ProjectResponse[] | null = null;
+    let remainingSessions: AgentSessionResponse[] | null = null;
+
     try {
       if (managementDialog.action === 'rename') {
         if (managementDialog.kind === 'project') {
-          const updatedProject = await patchApiJson<ProjectResponse>(
+          updatedProject = await patchApiJson<ProjectResponse>(
             `/api/v1/projects/${managementDialog.id}`,
             { name: nextLabel },
             controller.signal,
           );
-
-          setProjects((currentProjects) => currentProjects.map((project) => (
-            project.id === updatedProject.id ? updatedProject : project
-          )));
-          setProjectsStatus(`Renamed project to ${updatedProject.name}`);
         } else {
-          const updatedSession = await patchApiJson<AgentSessionResponse>(
+          updatedSession = await patchApiJson<AgentSessionResponse>(
             `/api/v1/sessions/${managementDialog.id}`,
             { title: nextLabel },
             controller.signal,
           );
-
-          setAgentSessions((currentSessions) => currentSessions.map((agentSession) => (
-            agentSession.id === updatedSession.id ? updatedSession : agentSession
-          )));
-          setSessionsStatus(`Renamed conversation to ${updatedSession.title}`);
         }
       } else if (managementDialog.kind === 'project') {
         await deleteApi(
@@ -996,10 +1038,45 @@ function App() {
           controller.signal,
         );
 
-        const remainingProjects = projects.filter(
+        remainingProjects = projects.filter(
           (project) => project.id !== managementDialog.id,
         );
+      } else {
+        await deleteApi(
+          `/api/v1/sessions/${managementDialog.id}`,
+          controller.signal,
+        );
 
+        remainingSessions = agentSessions.filter(
+          (agentSession) => agentSession.id !== managementDialog.id,
+        );
+      }
+
+      if (managementDialog.action === 'delete') {
+        setRemovingResource({
+          kind: managementDialog.kind,
+          id: managementDialog.id,
+        });
+      }
+
+      setIsManagementDialogClosing(true);
+      await waitForInterfaceTransition();
+
+      if (updatedProject !== null) {
+        const projectUpdate = updatedProject;
+
+        setProjects((currentProjects) => currentProjects.map((project) => (
+          project.id === projectUpdate.id ? projectUpdate : project
+        )));
+        setProjectsStatus(`Renamed project to ${projectUpdate.name}`);
+      } else if (updatedSession !== null) {
+        const sessionUpdate = updatedSession;
+
+        setAgentSessions((currentSessions) => currentSessions.map((agentSession) => (
+          agentSession.id === sessionUpdate.id ? sessionUpdate : agentSession
+        )));
+        setSessionsStatus(`Renamed conversation to ${sessionUpdate.title}`);
+      } else if (remainingProjects !== null) {
         setProjects(remainingProjects);
         setProjectsStatus(
           remainingProjects.length === 0
@@ -1015,16 +1092,7 @@ function App() {
         } else if (expandedProjectId === managementDialog.id) {
           setExpandedProjectId(null);
         }
-      } else {
-        await deleteApi(
-          `/api/v1/sessions/${managementDialog.id}`,
-          controller.signal,
-        );
-
-        const remainingSessions = agentSessions.filter(
-          (agentSession) => agentSession.id !== managementDialog.id,
-        );
-
+      } else if (remainingSessions !== null) {
         setAgentSessions(remainingSessions);
         setSessionsStatus(
           remainingSessions.length === 0
@@ -1042,7 +1110,11 @@ function App() {
 
       setManagementDialog(null);
       setManagementStatus('');
+      setIsManagementDialogClosing(false);
+      setRemovingResource(null);
     } catch (error) {
+      setIsManagementDialogClosing(false);
+      setRemovingResource(null);
       setManagementStatus(
         `${managementDialog.action === 'rename' ? 'Rename' : 'Delete'} failed: ${requestErrorMessage(error)}`,
       );
@@ -1849,6 +1921,12 @@ function App() {
                                   <div
                                     className="tree-row-shell session-row-shell"
                                     data-active={sessionIsActive || undefined}
+                                    data-removing={
+                                      removingResource?.kind === 'session'
+                                      && removingResource.id === agentSession.id
+                                        ? true
+                                        : undefined
+                                    }
                                     key={agentSession.id}
                                   >
                                     <button
@@ -2357,9 +2435,10 @@ function App() {
       {managementDialog !== null && (
         <div
           className="management-dialog-backdrop"
+          data-closing={isManagementDialogClosing || undefined}
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget && !isManagingResource) {
-              setManagementDialog(null);
+            if (event.target === event.currentTarget) {
+              closeManagementDialog();
             }
           }}
         >
@@ -2368,6 +2447,7 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="management-dialog-title"
+            aria-busy={isManagingResource}
             onSubmit={manageResource}
           >
             <div className="management-dialog-heading">
@@ -2393,7 +2473,7 @@ function App() {
                   value={managementValue}
                   onChange={(event) => setManagementValue(event.target.value)}
                   maxLength={managementDialog.kind === 'project' ? 120 : 160}
-                  disabled={isManagingResource}
+                  disabled={isManagingResource || isManagementDialogClosing}
                   autoFocus
                   required
                 />
@@ -2414,15 +2494,15 @@ function App() {
               <button
                 className="button button--ghost"
                 type="button"
-                onClick={() => setManagementDialog(null)}
-                disabled={isManagingResource}
+                onClick={closeManagementDialog}
+                disabled={isManagingResource || isManagementDialogClosing}
               >
                 Cancel
               </button>
               <button
                 className={`button ${managementDialog.action === 'delete' ? 'button--danger' : 'button--primary'}`}
                 type="submit"
-                disabled={isManagingResource}
+                disabled={isManagingResource || isManagementDialogClosing}
               >
                 {isManagingResource
                   ? managementDialog.action === 'rename' ? 'Renaming...' : 'Deleting...'

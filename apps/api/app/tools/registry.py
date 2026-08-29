@@ -7,6 +7,7 @@ from app.tools.edit_file import EditFileTool
 from app.tools.echo import EchoTool
 from app.tools.list_files import ListFilesTool
 from app.tools.search_files import SearchFilesTool
+from app.tools.shell import ShellTool
 from app.tools.write_file import WriteFileTool
 
 
@@ -63,5 +64,6 @@ def create_default_tool_registry(
         tools.append(WriteFileTool(workspace_root=workspace_root))
         tools.append(EditFileTool(workspace_root=workspace_root))
         tools.append(SearchFilesTool(workspace_root=workspace_root))
+        tools.append(ShellTool(workspace_root=workspace_root))
 
     return ToolRegistry(tools)

@@ -252,6 +252,7 @@ function ActivityRow({
 function approvalActionLabel(toolName: string): string {
   if (toolName === 'write_file') return 'Create a new file';
   if (toolName === 'edit_file') return 'Edit an existing file';
+  if (toolName === 'shell') return 'Run a shell command';
 
   return `Run ${toolName}`;
 }

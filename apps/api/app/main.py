@@ -25,6 +25,12 @@ from app.schemas import (
     AgentSessionCreate,
     AgentSessionResponse,
     AgentSessionUpdate,
+    GitChangesResponse,
+    GitCommitRequest,
+    GitRevertRequest,
+    WorkspaceFilePreviewResponse,
+    WorkspaceSearchMatch,
+    WorkspaceSearchResponse,
     MessageCreate,
     MessageResponse,
     ModelCatalogResponse,
@@ -39,6 +45,9 @@ from app.schemas import (
 )
 from app.services import (
     AgentRunNotFoundError,
+    GitOperationError,
+    GitPathError,
+    GitRepositoryError,
     InvalidWorkspaceRootError,
     RunAlreadyFinishedError,
     RunTaskAlreadyActiveError,
@@ -48,9 +57,12 @@ from app.services import (
     ToolApprovalNotFoundError,
     ToolApprovalRequest,
     append_run_event,
+    collect_git_changes,
+    commit_git_files,
     load_model_catalog,
     model_is_configured,
     request_run_cancellation,
+    revert_git_file,
     resolve_workspace_root,
 )
 
@@ -319,6 +331,230 @@ def create_workspace(
     session.refresh(workspace)
 
     return workspace
+
+
+def _workspace_or_404(workspace_id: UUID, session: Session) -> Workspace:
+    workspace = session.get(Workspace, workspace_id)
+
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found.",
+        )
+
+    return workspace
+
+
+def _git_http_error(error: Exception) -> HTTPException:
+    if isinstance(error, GitRepositoryError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        )
+
+    if isinstance(error, GitPathError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        )
+
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=str(error),
+    )
+
+
+@app.get(
+    "/api/v1/workspaces/{workspace_id}/search",
+    response_model=WorkspaceSearchResponse,
+)
+def search_workspace_files(
+    workspace_id: UUID,
+    session: DatabaseSession,
+    q: str = "",
+    glob: str | None = None,
+    regex: bool = False,
+    case_insensitive: bool = True,
+    offset: int = 0,
+    limit: int | None = None,
+) -> WorkspaceSearchResponse:
+    """
+    Ripgrep-inspired workspace content search.
+
+    Mirrors claude-code GlobalSearchDialog (debounced, -F fixed string, -i case-insensitive,
+    -m 10 per file, MAX_TOTAL 500, truncated flag) and GrepTool pagination.
+    `regex=False` treats `q` as fixed string (like GlobalSearchDialog -F); true treats as regex.
+    """
+    workspace = _workspace_or_404(workspace_id, session)
+
+    if not q or not q.strip():
+        return WorkspaceSearchResponse(
+            query=q, matches=[], truncated=False, total=0
+        )
+
+    # GrepTool head_limit semantics: None -> default 250, 0 -> unlimited
+    # For UI we want larger default when called without explicit limit (like GlobalSearchDialog's 500)
+    # but keep tool-compat: default 250 unless frontend passes limit
+    # Frontend will pass limit=500 to get up to MAX_TOTAL_MATCHES
+    from pathlib import Path
+
+    from app.services.workspace_search import search_workspace
+
+    try:
+        root = Path(workspace.root_path)
+        matches, truncated = search_workspace(
+            root,
+            q,
+            regex=regex,
+            case_insensitive=case_insensitive,
+            glob=glob,
+            offset=offset,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return WorkspaceSearchResponse(
+        query=q,
+        matches=[
+            WorkspaceSearchMatch(file=m.file, line=m.line, text=m.text)
+            for m in matches
+        ],
+        truncated=truncated,
+        total=len(matches),
+    )
+
+
+@app.get(
+    "/api/v1/workspaces/{workspace_id}/file",
+    response_model=WorkspaceFilePreviewResponse,
+)
+def read_workspace_file_preview(
+    workspace_id: UUID,
+    session: DatabaseSession,
+    path: str = "",
+    start_line: int = 0,
+    line_count: int = 9,
+) -> WorkspaceFilePreviewResponse:
+    """
+    Read a range of lines for preview, like GlobalSearchDialog's readFileInRange
+    (PREVIEW_CONTEXT_LINES*2+1 = 9). 0-indexed start_line.
+    """
+    workspace = _workspace_or_404(workspace_id, session)
+
+    if not path or not path.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Query parameter 'path' must be a relative workspace file path.",
+        )
+
+    # Clamp line_count to prevent large reads
+    if line_count <= 0 or line_count > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="line_count must be between 1 and 100.",
+        )
+    if start_line < 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="start_line must be >= 0.",
+        )
+
+    from pathlib import Path
+
+    from app.services.workspace_search import read_file_range
+    from app.workspace_paths import InvalidWorkspacePathError
+
+    try:
+        root = Path(workspace.root_path)
+        content, total = read_file_range(root, path, start_line, line_count)
+    except InvalidWorkspacePathError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Workspace file is not valid UTF-8 text.",
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return WorkspaceFilePreviewResponse(
+        file=path, content=content, start_line=start_line, total_lines=total
+    )
+
+
+@app.get(
+    "/api/v1/workspaces/{workspace_id}/git/changes",
+    response_model=GitChangesResponse,
+)
+def get_git_changes(
+    workspace_id: UUID,
+    session: DatabaseSession,
+) -> GitChangesResponse:
+    workspace = _workspace_or_404(workspace_id, session)
+
+    try:
+        return collect_git_changes(workspace.root_path)
+    except (GitRepositoryError, GitPathError, GitOperationError) as error:
+        raise _git_http_error(error) from error
+
+
+@app.post(
+    "/api/v1/workspaces/{workspace_id}/git/revert",
+    response_model=GitChangesResponse,
+)
+def revert_workspace_git_file(
+    workspace_id: UUID,
+    payload: GitRevertRequest,
+    session: DatabaseSession,
+) -> GitChangesResponse:
+    workspace = _workspace_or_404(workspace_id, session)
+
+    try:
+        return revert_git_file(workspace.root_path, payload.path)
+    except (GitRepositoryError, GitPathError, GitOperationError) as error:
+        raise _git_http_error(error) from error
+
+
+@app.post(
+    "/api/v1/workspaces/{workspace_id}/git/commit",
+    response_model=GitChangesResponse,
+)
+def commit_workspace_git_files(
+    workspace_id: UUID,
+    payload: GitCommitRequest,
+    session: DatabaseSession,
+) -> GitChangesResponse:
+    workspace = _workspace_or_404(workspace_id, session)
+
+    try:
+        return commit_git_files(
+            workspace.root_path,
+            paths=payload.paths,
+            message=payload.message,
+            branch_name=payload.branch_name,
+        )
+    except (GitRepositoryError, GitPathError, GitOperationError) as error:
+        raise _git_http_error(error) from error
 
 
 @app.get(

@@ -2,6 +2,14 @@ from app.services.provider_requests import (
     UnsupportedMessageRoleError,
     build_provider_request,
 )
+from app.services.git_changes import (
+    GitOperationError,
+    GitPathError,
+    GitRepositoryError,
+    collect_git_changes,
+    commit_git_files,
+    revert_git_file,
+)
 from app.services.model_catalog import (
     ModelCatalogConfigurationError,
     load_model_catalog,
@@ -64,6 +72,9 @@ __all__ = [
     "AgentRunNotFoundError",
     "AssembledToolCall",
     "InvalidWorkspaceRootError",
+    "GitOperationError",
+    "GitPathError",
+    "GitRepositoryError",
     "ModelCatalogConfigurationError",
     "InvalidWorkspacePathError",
     "ProviderStreamProtocolError",
@@ -86,6 +97,8 @@ __all__ = [
     "append_run_event",
     "build_provider_request",
     "cancel_running_agent_run",
+    "collect_git_changes",
+    "commit_git_files",
     "complete_agent_run",
     "execute_text_run",
     "execute_tool_call",
@@ -94,6 +107,7 @@ __all__ = [
     "load_model_catalog",
     "load_run_workspace",
     "request_run_cancellation",
+    "revert_git_file",
     "model_is_configured",
     "resolve_workspace_root",
     "resolve_workspace_path",

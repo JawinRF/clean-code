@@ -15,6 +15,13 @@ from app.schemas.message import (
     MessageResponse,
     TextMessagePart,
 )
+from app.schemas.git_changes import (
+    GitChangedFile,
+    GitChangesResponse,
+    GitCommitRequest,
+    GitDiffLine,
+    GitRevertRequest,
+)
 from app.schemas.model_catalog import (
     ModelCatalogModel,
     ModelCatalogProvider,
@@ -28,6 +35,11 @@ from app.schemas.tool_approval import (
     ToolApprovalResponse,
 )
 from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse
+from app.schemas.workspace_search import (
+    WorkspaceFilePreviewResponse,
+    WorkspaceSearchMatch,
+    WorkspaceSearchResponse,
+)
 
 __all__ = [
     "AgentRunCreate",
@@ -36,6 +48,11 @@ __all__ = [
     "AgentSessionCreate",
     "AgentSessionResponse",
     "AgentSessionUpdate",
+    "GitChangedFile",
+    "GitChangesResponse",
+    "GitCommitRequest",
+    "GitDiffLine",
+    "GitRevertRequest",
     "MessageContent",
     "MessageCreate",
     "MessageResponse",
@@ -52,5 +69,8 @@ __all__ = [
     "ToolApprovalDecisionRequest",
     "ToolApprovalResponse",
     "WorkspaceCreate",
+    "WorkspaceFilePreviewResponse",
     "WorkspaceResponse",
+    "WorkspaceSearchMatch",
+    "WorkspaceSearchResponse",
 ]

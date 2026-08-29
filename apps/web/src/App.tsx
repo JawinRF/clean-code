@@ -28,6 +28,10 @@ import {
   UserMessageContent,
 } from './MessageContent';
 import { CleanCodeLogo } from './components/CleanCodeLogo';
+import { ConversationSearchBar } from './components/ConversationSearchBar';
+import { GlobalSearchDialog } from './components/GlobalSearchDialog';
+import { highlightMatch } from './utils/highlightMatch';
+import { messageSearchText } from './utils/transcriptSearch';
 import './App.css';
 
 type ReadyResponse = {
@@ -140,6 +144,7 @@ type IconName =
   | 'pencil'
   | 'plus'
   | 'refresh'
+  | 'search'
   | 'stop'
   | 'terminal'
   | 'trash';
@@ -160,6 +165,7 @@ function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     plus: <path d="M12 5v14M5 12h14" />,
     refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 8a7 7 0 0 1 11.7-1.9L20 8M4 16l2.2 1.9A7 7 0 0 0 17.9 16" />,
     stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
+    search: <><circle cx="11" cy="11" r="6" /><path d="m15 15 4 4" /></>,
     terminal: <path d="m5 7 4 4-4 4M11 16h8" />,
     trash: <path d="M5 7h14M9 7V4h6v3M8 10v8M12 10v8M16 10v8M6 7l1 14h10l1-14" />,
   };
@@ -478,6 +484,10 @@ function App() {
   const [isManagementDialogClosing, setIsManagementDialogClosing] = useState(false);
   const [removingResource, setRemovingResource] = useState<ResourceActionMenu | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [isConversationSearchOpen, setIsConversationSearchOpen] = useState(false);
+  const [conversationSearchQuery, setConversationSearchQuery] = useState('');
+  const [conversationSearchActiveId, setConversationSearchActiveId] = useState<string | null>(null);
   const conversationRef = useRef<HTMLElement | null>(null);
   const followConversationRef = useRef(true);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -915,6 +925,12 @@ function App() {
       setShowScrollToBottom(false);
     });
   }, [activeTurn, messages, runEvents]);
+
+  useEffect(() => {
+    if (conversationSearchActiveId === null) return;
+    const el = document.getElementById(`msg-${conversationSearchActiveId}`);
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [conversationSearchActiveId]);
 
   useEffect(() => {
     if (activeTurn === null) return undefined;
@@ -1456,6 +1472,46 @@ function App() {
       document.removeEventListener('keydown', handleNewConversationShortcut);
     };
   }, [activeTurn, isSubmitting, selectedWorkspaceId, startNewConversation]);
+
+  useEffect(() => {
+    const handleSearchShortcuts = (event: KeyboardEvent) => {
+      const isMod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      // Global search: Ctrl+Shift+F / Cmd+Shift+F (like claude-code GlobalSearchDialog)
+      if (isMod && event.shiftKey && key === 'f') {
+        event.preventDefault();
+        if (selectedWorkspaceId !== null) setIsGlobalSearchOpen(true);
+        return;
+      }
+      // Alternative: Ctrl+K for global search (common web)
+      if (isMod && key === 'k') {
+        event.preventDefault();
+        if (selectedWorkspaceId !== null) setIsGlobalSearchOpen(true);
+        return;
+      }
+      // Conversation search: Ctrl+F or '/' (like claude-code transcript search)
+      if (isMod && key === 'f' && !event.shiftKey) {
+        if (messages.length === 0) return;
+        event.preventDefault();
+        setIsConversationSearchOpen((v) => !v);
+        return;
+      }
+      // '/' as vim/less incremental search when not typing in input/textarea
+      if (
+        key === '/' &&
+        !isMod &&
+        !event.shiftKey &&
+        !(event.target instanceof HTMLInputElement) &&
+        !(event.target instanceof HTMLTextAreaElement) &&
+        messages.length > 0
+      ) {
+        event.preventDefault();
+        setIsConversationSearchOpen(true);
+      }
+    };
+    document.addEventListener('keydown', handleSearchShortcuts);
+    return () => document.removeEventListener('keydown', handleSearchShortcuts);
+  }, [messages.length, selectedWorkspaceId]);
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2227,6 +2283,26 @@ function App() {
             </div>
           </div>
           <div className="header-actions">
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Global search"
+              title="Global search (Ctrl+Shift+F / Ctrl+K)"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              disabled={selectedWorkspaceId === null}
+            >
+              <Icon name="search" size={15} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Search conversation"
+              title="Search conversation (Ctrl+F / /)"
+              onClick={() => setIsConversationSearchOpen((v) => !v)}
+              disabled={messages.length === 0}
+            >
+              <Icon name="search" size={15} />
+            </button>
             <span className="model-chip">{selectedModelOption?.label ?? 'Model not selected'}</span>
             <details className="system-menu">
               <summary className="icon-button" aria-label="Open system status" title="System status">
@@ -2271,6 +2347,19 @@ function App() {
             </details>
           </div>
         </header>
+
+        <ConversationSearchBar
+          messages={messages}
+          isOpen={isConversationSearchOpen}
+          query={conversationSearchQuery}
+          onQueryChange={setConversationSearchQuery}
+          onClose={() => {
+            setIsConversationSearchOpen(false);
+            setConversationSearchQuery('');
+            setConversationSearchActiveId(null);
+          }}
+          onNavigate={(id) => setConversationSearchActiveId(id)}
+        />
 
         <section
           ref={conversationRef}
@@ -2360,9 +2449,20 @@ function App() {
                 {messages.map((message) => {
                   const isUser = message.role === 'user';
                   const text = messageText(message) || 'Empty text message';
+                  const searchQuery = conversationSearchQuery.trim();
+                  const isSearchMatch = searchQuery.length > 0
+                    && messageSearchText(message).includes(searchQuery.toLowerCase());
+                  const isActiveSearchMatch = conversationSearchActiveId === message.id;
 
                   return (
-                    <article className="transcript-message" data-role={message.role} key={message.id}>
+                    <article
+                      id={`msg-${message.id}`}
+                      className="transcript-message"
+                      data-role={message.role}
+                      data-search-match={isSearchMatch || undefined}
+                      data-active-match={isActiveSearchMatch || undefined}
+                      key={message.id}
+                    >
                       {!isUser && (
                         <span className="message-author-mark">
                           <img className="product-logo" src="/clean-code-logo.png" alt="" />
@@ -2370,8 +2470,16 @@ function App() {
                       )}
                       <div className="message-body">
                         {isUser
-                          ? <UserMessageContent text={text} />
-                          : <AssistantMessageContent text={text} />}
+                          ? (
+                            searchQuery.length > 0
+                              ? <div className="plain-message">{highlightMatch(text, searchQuery)}</div>
+                              : <UserMessageContent text={text} />
+                          )
+                          : (
+                            searchQuery.length > 0
+                              ? <div className="markdown-content search-markdown-highlight">{highlightMatch(text, searchQuery)}</div>
+                              : <AssistantMessageContent text={text} />
+                          )}
                         <footer className="message-actions">
                           <time dateTime={message.created_at}>
                             {new Date(message.created_at).toLocaleTimeString([], {
@@ -2618,6 +2726,14 @@ function App() {
           </div>
         </footer>
       </main>
+
+      {isGlobalSearchOpen && (
+        <GlobalSearchDialog
+          workspaceId={selectedWorkspaceId}
+          workspaceName={selectedWorkspace?.name ?? null}
+          onClose={() => setIsGlobalSearchOpen(false)}
+        />
+      )}
 
       {managementDialog !== null && (
         <div

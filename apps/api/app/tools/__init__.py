@@ -8,6 +8,7 @@ from app.tools.registry import (
     UnknownToolError,
     create_default_tool_registry,
 )
+from app.tools.search_files import SearchFilesInput, SearchFilesTool
 from app.tools.write_file import WriteFileInput, WriteFileTool
 
 __all__ = [
@@ -19,6 +20,8 @@ __all__ = [
     "EchoTool",
     "ListFilesInput",
     "ListFilesTool",
+    "SearchFilesInput",
+    "SearchFilesTool",
     "ToolRegistry",
     "ToolResult",
     "UnknownToolError",

@@ -3,11 +3,16 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import {
+  deleteApi,
   getApiJson,
+  patchApiJson,
   postApiJson,
   type AgentRunResponse,
   type AgentSessionResponse,
@@ -65,11 +70,43 @@ type ModelSelection = {
   modelId: string;
 };
 
+type ManagedResource = {
+  kind: 'project' | 'session';
+  id: string;
+  label: string;
+};
+
+type ResourceActionMenu = Pick<ManagedResource, 'kind' | 'id'>;
+
+type ManagementDialog = ManagedResource & {
+  action: 'rename' | 'delete';
+};
+
 const TERMINAL_RUN_STATUSES = new Set([
   'completed',
   'failed',
   'cancelled',
 ]);
+
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 440;
+const SIDEBAR_DEFAULT_WIDTH = 252;
+const MAIN_CONTENT_MIN_WIDTH = 520;
+const SIDEBAR_KEYBOARD_STEP = 16;
+
+function maximumSidebarWidth(): number {
+  return Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, window.innerWidth - MAIN_CONTENT_MIN_WIDTH),
+  );
+}
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(
+    maximumSidebarWidth(),
+    Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)),
+  );
+}
 
 type IconName =
   | 'arrow-up'
@@ -81,10 +118,13 @@ type IconName =
   | 'folder'
   | 'menu'
   | 'message'
+  | 'more'
+  | 'pencil'
   | 'plus'
   | 'refresh'
   | 'stop'
-  | 'terminal';
+  | 'terminal'
+  | 'trash';
 
 function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -97,10 +137,13 @@ function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     folder: <path d="M3 7.5h6l2-2h10v13H3z" />,
     menu: <path d="M5 7h14M5 12h14M5 17h14" />,
     message: <path d="M4 5h16v12H8l-4 3z" />,
+    more: <path d="M6 12h.01M12 12h.01M18 12h.01" />,
+    pencil: <path d="m4 20 4.2-1 10.6-10.6-3.2-3.2L5 15.8 4 20ZM13.8 7l3.2 3.2" />,
     plus: <path d="M12 5v14M5 12h14" />,
     refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 8a7 7 0 0 1 11.7-1.9L20 8M4 16l2.2 1.9A7 7 0 0 0 17.9 16" />,
     stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
     terminal: <path d="m5 7 4 4-4 4M11 16h8" />,
+    trash: <path d="M5 7h14M9 7V4h6v3M8 10v8M12 10v8M16 10v8M6 7l1 14h10l1-14" />,
   };
 
   return (
@@ -269,9 +312,11 @@ function App() {
   const [isCreating, setIsCreating] = useState(false);
   const [isProjectFormOpen, setIsProjectFormOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
   const [workspacesStatus, setWorkspacesStatus] = useState('Workspaces not loaded');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [expandedWorkspaceId, setExpandedWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceRootPath, setWorkspaceRootPath] = useState('');
   const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState('Enter a local folder path');
@@ -297,12 +342,27 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [resourceActionMenu, setResourceActionMenu] = useState<ResourceActionMenu | null>(null);
+  const [managementDialog, setManagementDialog] = useState<ManagementDialog | null>(null);
+  const [managementValue, setManagementValue] = useState('');
+  const [managementStatus, setManagementStatus] = useState('');
+  const [isManagingResource, setIsManagingResource] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const conversationRef = useRef<HTMLElement | null>(null);
   const followConversationRef = useRef(true);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const composingRef = useRef(false);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
+  const resourceActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const sidebarResizeRef = useRef({
+    pointerId: null as number | null,
+    startX: 0,
+    startWidth: SIDEBAR_DEFAULT_WIDTH,
+    latestX: 0,
+  });
+  const sidebarResizeFrameRef = useRef<number | null>(null);
 
   const checkApi = useCallback(async () => {
     setApiStatus('Checking...');
@@ -468,17 +528,81 @@ function App() {
   }, [isModelMenuOpen]);
 
   useEffect(() => {
+    if (resourceActionMenu === null) return undefined;
+
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node
+        && !resourceActionMenuRef.current?.contains(event.target)
+      ) {
+        setResourceActionMenu(null);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setResourceActionMenu(null);
+      }
+    };
+
+    document.addEventListener('pointerdown', closeOnPointerDown);
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [resourceActionMenu]);
+
+  useEffect(() => {
+    if (managementDialog === null) return undefined;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isManagingResource) {
+        setManagementDialog(null);
+      }
+    };
+
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isManagingResource, managementDialog]);
+
+  useEffect(() => {
+    const keepSidebarInRange = () => {
+      if (window.innerWidth <= 760) return;
+
+      setSidebarWidth((currentWidth) => clampSidebarWidth(currentWidth));
+    };
+
+    window.addEventListener('resize', keepSidebarInRange);
+
+    return () => {
+      window.removeEventListener('resize', keepSidebarInRange);
+
+      if (sidebarResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(sidebarResizeFrameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (
       projects.length > 0
       && !projects.some((project) => project.id === selectedProjectId)
     ) {
-      setSelectedProjectId(projects[0].id);
+      const firstProjectId = projects[0].id;
+
+      setSelectedProjectId(firstProjectId);
+      setExpandedProjectId(firstProjectId);
     }
   }, [projects, selectedProjectId]);
 
   useEffect(() => {
     setWorkspaces([]);
     setSelectedWorkspaceId(null);
+    setExpandedWorkspaceId(null);
     setAgentSessions([]);
     setSelectedSessionId(null);
     setIsNewConversation(false);
@@ -504,7 +628,10 @@ function App() {
     ).then((data) => {
       if (!active) return;
       setWorkspaces(data);
-      setSelectedWorkspaceId(data[0]?.id ?? null);
+      const firstWorkspaceId = data[0]?.id ?? null;
+
+      setSelectedWorkspaceId(firstWorkspaceId);
+      setExpandedWorkspaceId(firstWorkspaceId);
       setWorkspacesStatus(
         data.length === 0
           ? 'No workspaces found'
@@ -764,6 +891,232 @@ function App() {
     };
   }, [activeTurn, isStopping]);
 
+  function selectProject(projectId: string) {
+    setSelectedProjectId(projectId);
+    setExpandedProjectId(projectId);
+    setResourceActionMenu(null);
+  }
+
+  function toggleProject(projectId: string) {
+    if (expandedProjectId === projectId) {
+      setExpandedProjectId(null);
+      return;
+    }
+
+    setSelectedProjectId(projectId);
+    setExpandedProjectId(projectId);
+  }
+
+  function selectWorkspace(workspaceId: string) {
+    setSelectedWorkspaceId(workspaceId);
+    setExpandedWorkspaceId(workspaceId);
+    setResourceActionMenu(null);
+  }
+
+  function toggleWorkspace(workspaceId: string) {
+    if (expandedWorkspaceId === workspaceId) {
+      setExpandedWorkspaceId(null);
+      return;
+    }
+
+    setSelectedWorkspaceId(workspaceId);
+    setExpandedWorkspaceId(workspaceId);
+  }
+
+  function toggleResourceActionMenu(kind: ManagedResource['kind'], id: string) {
+    setResourceActionMenu((currentMenu) => (
+      currentMenu?.kind === kind && currentMenu.id === id
+        ? null
+        : { kind, id }
+    ));
+  }
+
+  function openManagementDialog(
+    resource: ManagedResource,
+    action: ManagementDialog['action'],
+  ) {
+    setResourceActionMenu(null);
+    setManagementDialog({ ...resource, action });
+    setManagementValue(resource.label);
+    setManagementStatus('');
+  }
+
+  async function manageResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (
+      managementDialog === null
+      || isManagingResource
+      || activeTurn !== null
+      || isSubmitting
+    ) return;
+
+    const nextLabel = managementValue.trim();
+
+    if (managementDialog.action === 'rename' && nextLabel.length === 0) {
+      setManagementStatus('Enter a name.');
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    setIsManagingResource(true);
+    setManagementStatus(
+      managementDialog.action === 'rename' ? 'Renaming...' : 'Deleting...',
+    );
+
+    try {
+      if (managementDialog.action === 'rename') {
+        if (managementDialog.kind === 'project') {
+          const updatedProject = await patchApiJson<ProjectResponse>(
+            `/api/v1/projects/${managementDialog.id}`,
+            { name: nextLabel },
+            controller.signal,
+          );
+
+          setProjects((currentProjects) => currentProjects.map((project) => (
+            project.id === updatedProject.id ? updatedProject : project
+          )));
+          setProjectsStatus(`Renamed project to ${updatedProject.name}`);
+        } else {
+          const updatedSession = await patchApiJson<AgentSessionResponse>(
+            `/api/v1/sessions/${managementDialog.id}`,
+            { title: nextLabel },
+            controller.signal,
+          );
+
+          setAgentSessions((currentSessions) => currentSessions.map((agentSession) => (
+            agentSession.id === updatedSession.id ? updatedSession : agentSession
+          )));
+          setSessionsStatus(`Renamed conversation to ${updatedSession.title}`);
+        }
+      } else if (managementDialog.kind === 'project') {
+        await deleteApi(
+          `/api/v1/projects/${managementDialog.id}`,
+          controller.signal,
+        );
+
+        const remainingProjects = projects.filter(
+          (project) => project.id !== managementDialog.id,
+        );
+
+        setProjects(remainingProjects);
+        setProjectsStatus(
+          remainingProjects.length === 0
+            ? 'No projects found'
+            : `${remainingProjects.length} project${remainingProjects.length === 1 ? '' : 's'} loaded`,
+        );
+
+        if (selectedProjectId === managementDialog.id) {
+          const nextProjectId = remainingProjects[0]?.id ?? null;
+
+          setSelectedProjectId(nextProjectId);
+          setExpandedProjectId(nextProjectId);
+        } else if (expandedProjectId === managementDialog.id) {
+          setExpandedProjectId(null);
+        }
+      } else {
+        await deleteApi(
+          `/api/v1/sessions/${managementDialog.id}`,
+          controller.signal,
+        );
+
+        const remainingSessions = agentSessions.filter(
+          (agentSession) => agentSession.id !== managementDialog.id,
+        );
+
+        setAgentSessions(remainingSessions);
+        setSessionsStatus(
+          remainingSessions.length === 0
+            ? 'No sessions found'
+            : `${remainingSessions.length} session${remainingSessions.length === 1 ? '' : 's'} loaded`,
+        );
+
+        if (selectedSessionId === managementDialog.id) {
+          const nextSessionId = remainingSessions[0]?.id ?? null;
+
+          setSelectedSessionId(nextSessionId);
+          setIsNewConversation(nextSessionId === null);
+        }
+      }
+
+      setManagementDialog(null);
+      setManagementStatus('');
+    } catch (error) {
+      setManagementStatus(
+        `${managementDialog.action === 'rename' ? 'Rename' : 'Delete'} failed: ${requestErrorMessage(error)}`,
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
+      setIsManagingResource(false);
+    }
+  }
+
+  function updateSidebarWidthFromPointer() {
+    sidebarResizeFrameRef.current = null;
+    const resize = sidebarResizeRef.current;
+
+    setSidebarWidth(clampSidebarWidth(
+      resize.startWidth + resize.latestX - resize.startX,
+    ));
+  }
+
+  function beginSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (window.innerWidth <= 760) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sidebarResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+      latestX: event.clientX,
+    };
+    setIsResizingSidebar(true);
+  }
+
+  function resizeSidebar(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sidebarResizeRef.current.pointerId !== event.pointerId) return;
+
+    sidebarResizeRef.current.latestX = event.clientX;
+
+    if (sidebarResizeFrameRef.current === null) {
+      sidebarResizeFrameRef.current = window.requestAnimationFrame(
+        updateSidebarWidthFromPointer,
+      );
+    }
+  }
+
+  function finishSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sidebarResizeRef.current.pointerId !== event.pointerId) return;
+
+    sidebarResizeRef.current.latestX = event.clientX;
+
+    if (sidebarResizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(sidebarResizeFrameRef.current);
+    }
+
+    updateSidebarWidthFromPointer();
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    sidebarResizeRef.current.pointerId = null;
+    setIsResizingSidebar(false);
+  }
+
+  function resizeSidebarWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+
+    setSidebarWidth((currentWidth) => clampSidebarWidth(
+      currentWidth + direction * SIDEBAR_KEYBOARD_STEP,
+    ));
+  }
+
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsCreating(true);
@@ -804,6 +1157,7 @@ function App() {
       ]);
       setProjectsStatus('Project list updated');
       setSelectedProjectId(createdProject.id);
+      setExpandedProjectId(createdProject.id);
       setProjectName('');
       setProjectDescription('');
       setCreateStatus(`Created ${createdProject.name}`);
@@ -850,6 +1204,8 @@ function App() {
         ...currentWorkspaces,
       ]);
       setSelectedWorkspaceId(createdWorkspace.id);
+      setExpandedProjectId(selectedProjectId);
+      setExpandedWorkspaceId(createdWorkspace.id);
       setWorkspacesStatus('Workspace list updated');
       setWorkspaceName('');
       setWorkspaceRootPath('');
@@ -1178,7 +1534,11 @@ function App() {
             : 'Message Clean Code';
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      data-resizing={isResizingSidebar || undefined}
+      style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
+    >
       <button
         className="sidebar-backdrop"
         type="button"
@@ -1344,50 +1704,126 @@ function App() {
         <nav className="project-list" aria-label="Projects">
           {projects.map((project) => {
             const projectIsActive = project.id === selectedProjectId;
+            const projectIsExpanded = project.id === expandedProjectId;
+            const projectMenuIsOpen = resourceActionMenu?.kind === 'project'
+              && resourceActionMenu.id === project.id;
 
             return (
               <div className="project-group" key={project.id}>
-                <button
-                  className="project-row"
+                <div
+                  className="tree-row-shell project-row-shell"
                   data-active={projectIsActive || undefined}
-                  type="button"
-                  aria-expanded={projectIsActive}
-                  onClick={() => setSelectedProjectId(project.id)}
-                  disabled={turnIsActive}
+                  data-expanded={projectIsExpanded || undefined}
                 >
-                  <span className="project-icon"><Icon name="folder" size={15} /></span>
-                  <span className="project-row-copy">
-                    <strong>{project.name}</strong>
-                    <small>{project.description ?? 'No description'}</small>
-                  </span>
-                  <span className="tree-chevron"><Icon name="chevron" size={12} /></span>
-                </button>
+                  <button
+                    className="project-row"
+                    type="button"
+                    aria-current={projectIsActive ? 'page' : undefined}
+                    onClick={() => selectProject(project.id)}
+                    disabled={turnIsActive || isManagingResource}
+                  >
+                    <span className="project-icon"><Icon name="folder" size={15} /></span>
+                    <span className="project-row-copy">
+                      <strong>{project.name}</strong>
+                      <small>{project.description ?? 'No description'}</small>
+                    </span>
+                  </button>
+                  <button
+                    className="tree-toggle"
+                    type="button"
+                    aria-label={`${projectIsExpanded ? 'Collapse' : 'Expand'} ${project.name}`}
+                    aria-expanded={projectIsExpanded}
+                    onClick={() => toggleProject(project.id)}
+                    disabled={turnIsActive || isManagingResource}
+                  >
+                    <Icon name="chevron" size={12} />
+                  </button>
+                  <div
+                    className="resource-action-anchor"
+                    ref={projectMenuIsOpen ? resourceActionMenuRef : undefined}
+                  >
+                    <button
+                      className="row-action-button"
+                      type="button"
+                      aria-label={`Actions for ${project.name}`}
+                      aria-haspopup="menu"
+                      aria-expanded={projectMenuIsOpen}
+                      data-open={projectMenuIsOpen || undefined}
+                      onClick={() => toggleResourceActionMenu('project', project.id)}
+                      disabled={turnIsActive || isManagingResource}
+                    >
+                      <Icon name="more" size={15} />
+                    </button>
+                    {projectMenuIsOpen && (
+                      <div className="resource-menu" role="menu">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => openManagementDialog(
+                            { kind: 'project', id: project.id, label: project.name },
+                            'rename',
+                          )}
+                        >
+                          <Icon name="pencil" size={13} />
+                          Rename project
+                        </button>
+                        <button
+                          className="resource-menu-danger"
+                          type="button"
+                          role="menuitem"
+                          onClick={() => openManagementDialog(
+                            { kind: 'project', id: project.id, label: project.name },
+                            'delete',
+                          )}
+                        >
+                          <Icon name="trash" size={13} />
+                          Delete project
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                {projectIsActive && (
+                {projectIsExpanded && projectIsActive && (
                   <div className="workspace-tree" role="group" aria-label={`${project.name} workspaces`}>
                     {workspaces.length === 0 && (
                       <p className="tree-status" role="status">{workspacesStatus}</p>
                     )}
                     {workspaces.map((workspace) => {
                       const workspaceIsActive = workspace.id === selectedWorkspaceId;
+                      const workspaceIsExpanded = workspace.id === expandedWorkspaceId;
 
                       return (
                         <div className="workspace-group" key={workspace.id}>
-                          <button
-                            className="workspace-row"
+                          <div
+                            className="tree-row-shell workspace-row-shell"
                             data-active={workspaceIsActive || undefined}
-                            type="button"
-                            aria-expanded={workspaceIsActive}
-                            title={workspace.root_path}
-                            onClick={() => setSelectedWorkspaceId(workspace.id)}
-                            disabled={turnIsActive}
+                            data-expanded={workspaceIsExpanded || undefined}
                           >
-                            <span className="workspace-icon"><Icon name="folder" size={14} /></span>
-                            <span>{workspace.name}</span>
-                            <span className="tree-chevron"><Icon name="chevron" size={11} /></span>
-                          </button>
+                            <button
+                              className="workspace-row"
+                              type="button"
+                              aria-current={workspaceIsActive ? 'page' : undefined}
+                              title={workspace.root_path}
+                              onClick={() => selectWorkspace(workspace.id)}
+                              disabled={turnIsActive || isManagingResource}
+                            >
+                              <span className="workspace-icon"><Icon name="folder" size={14} /></span>
+                              <span>{workspace.name}</span>
+                            </button>
+                            <button
+                              className="tree-toggle"
+                              type="button"
+                              aria-label={`${workspaceIsExpanded ? 'Collapse' : 'Expand'} ${workspace.name}`}
+                              aria-expanded={workspaceIsExpanded}
+                              onClick={() => toggleWorkspace(workspace.id)}
+                              disabled={turnIsActive || isManagingResource}
+                            >
+                              <Icon name="chevron" size={11} />
+                            </button>
+                          </div>
 
-                          {workspaceIsActive && (
+                          {workspaceIsExpanded && workspaceIsActive && (
                             <div className="session-list" role="group" aria-label={`${workspace.name} sessions`}>
                               {isNewConversation && (
                                 <button
@@ -1395,7 +1831,7 @@ function App() {
                                   data-active
                                   type="button"
                                   onClick={startNewConversation}
-                                  disabled={turnIsActive}
+                                  disabled={turnIsActive || isManagingResource}
                                 >
                                   <span className="session-icon"><Icon name="message" size={13} /></span>
                                   <span>New conversation</span>
@@ -1404,19 +1840,82 @@ function App() {
                               {agentSessions.length === 0 && !isNewConversation && (
                                 <p className="tree-status" role="status">{sessionsStatus}</p>
                               )}
-                              {agentSessions.map((agentSession) => (
-                                <button
-                                  className="session-row"
-                                  data-active={agentSession.id === selectedSessionId || undefined}
-                                  type="button"
-                                  key={agentSession.id}
-                                  onClick={() => selectStoredSession(agentSession.id)}
-                                  disabled={turnIsActive}
-                                >
-                                  <span className="session-icon"><Icon name="message" size={13} /></span>
-                                  <span>{agentSession.title}</span>
-                                </button>
-                              ))}
+                              {agentSessions.map((agentSession) => {
+                                const sessionIsActive = agentSession.id === selectedSessionId;
+                                const sessionMenuIsOpen = resourceActionMenu?.kind === 'session'
+                                  && resourceActionMenu.id === agentSession.id;
+
+                                return (
+                                  <div
+                                    className="tree-row-shell session-row-shell"
+                                    data-active={sessionIsActive || undefined}
+                                    key={agentSession.id}
+                                  >
+                                    <button
+                                      className="session-row"
+                                      type="button"
+                                      aria-current={sessionIsActive ? 'page' : undefined}
+                                      onClick={() => selectStoredSession(agentSession.id)}
+                                      disabled={turnIsActive || isManagingResource}
+                                    >
+                                      <span className="session-icon"><Icon name="message" size={13} /></span>
+                                      <span>{agentSession.title}</span>
+                                    </button>
+                                    <div
+                                      className="resource-action-anchor"
+                                      ref={sessionMenuIsOpen ? resourceActionMenuRef : undefined}
+                                    >
+                                      <button
+                                        className="row-action-button"
+                                        type="button"
+                                        aria-label={`Actions for ${agentSession.title}`}
+                                        aria-haspopup="menu"
+                                        aria-expanded={sessionMenuIsOpen}
+                                        data-open={sessionMenuIsOpen || undefined}
+                                        onClick={() => toggleResourceActionMenu('session', agentSession.id)}
+                                        disabled={turnIsActive || isManagingResource}
+                                      >
+                                        <Icon name="more" size={14} />
+                                      </button>
+                                      {sessionMenuIsOpen && (
+                                        <div className="resource-menu resource-menu--session" role="menu">
+                                          <button
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => openManagementDialog(
+                                              {
+                                                kind: 'session',
+                                                id: agentSession.id,
+                                                label: agentSession.title,
+                                              },
+                                              'rename',
+                                            )}
+                                          >
+                                            <Icon name="pencil" size={13} />
+                                            Rename chat
+                                          </button>
+                                          <button
+                                            className="resource-menu-danger"
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => openManagementDialog(
+                                              {
+                                                kind: 'session',
+                                                id: agentSession.id,
+                                                label: agentSession.title,
+                                              },
+                                              'delete',
+                                            )}
+                                          >
+                                            <Icon name="trash" size={13} />
+                                            Delete chat
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -1443,6 +1942,22 @@ function App() {
           </button>
         </div>
       </aside>
+
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-label="Resize project sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={maximumSidebarWidth()}
+        aria-valuenow={sidebarWidth}
+        tabIndex={0}
+        onPointerDown={beginSidebarResize}
+        onPointerMove={resizeSidebar}
+        onPointerUp={finishSidebarResize}
+        onPointerCancel={finishSidebarResize}
+        onKeyDown={resizeSidebarWithKeyboard}
+      />
 
       <main className="agent-area">
         <header className="agent-header">
@@ -1838,6 +2353,85 @@ function App() {
           </div>
         </footer>
       </main>
+
+      {managementDialog !== null && (
+        <div
+          className="management-dialog-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget && !isManagingResource) {
+              setManagementDialog(null);
+            }
+          }}
+        >
+          <form
+            className="management-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="management-dialog-title"
+            onSubmit={manageResource}
+          >
+            <div className="management-dialog-heading">
+              <span className="management-dialog-icon">
+                <Icon
+                  name={managementDialog.action === 'rename' ? 'pencil' : 'trash'}
+                  size={16}
+                />
+              </span>
+              <div>
+                <strong id="management-dialog-title">
+                  {managementDialog.action === 'rename' ? 'Rename' : 'Delete'}{' '}
+                  {managementDialog.kind === 'project' ? 'project' : 'chat'}
+                </strong>
+                <small>{managementDialog.label}</small>
+              </div>
+            </div>
+
+            {managementDialog.action === 'rename' ? (
+              <label className="management-field">
+                <span>{managementDialog.kind === 'project' ? 'Project name' : 'Chat title'}</span>
+                <input
+                  value={managementValue}
+                  onChange={(event) => setManagementValue(event.target.value)}
+                  maxLength={managementDialog.kind === 'project' ? 120 : 160}
+                  disabled={isManagingResource}
+                  autoFocus
+                  required
+                />
+              </label>
+            ) : (
+              <p className="management-warning">
+                {managementDialog.kind === 'project'
+                  ? 'This permanently deletes the project and all workspaces, chats, messages, runs, and events inside it.'
+                  : 'This permanently deletes this chat and all of its messages, runs, and events.'}
+              </p>
+            )}
+
+            {managementStatus.length > 0 && (
+              <p className="management-status" role="status">{managementStatus}</p>
+            )}
+
+            <div className="management-dialog-actions">
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={() => setManagementDialog(null)}
+                disabled={isManagingResource}
+              >
+                Cancel
+              </button>
+              <button
+                className={`button ${managementDialog.action === 'delete' ? 'button--danger' : 'button--primary'}`}
+                type="submit"
+                disabled={isManagingResource}
+              >
+                {isManagingResource
+                  ? managementDialog.action === 'rename' ? 'Renaming...' : 'Deleting...'
+                  : managementDialog.action === 'rename' ? 'Rename' : 'Delete'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

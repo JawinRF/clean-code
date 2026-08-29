@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -24,11 +24,13 @@ from app.schemas import (
     AgentRunResponse,
     AgentSessionCreate,
     AgentSessionResponse,
+    AgentSessionUpdate,
     MessageCreate,
     MessageResponse,
     ModelCatalogResponse,
     ProjectCreate,
     ProjectResponse,
+    ProjectUpdate,
     RunEventResponse,
     WorkspaceCreate,
     WorkspaceResponse,
@@ -160,6 +162,61 @@ def create_project(
     session.refresh(project)
 
     return project
+
+
+@app.patch(
+    "/api/v1/projects/{project_id}",
+    response_model=ProjectResponse,
+)
+def update_project(
+    project_id: UUID,
+    payload: ProjectUpdate,
+    session: DatabaseSession,
+) -> Project:
+    project = session.get(Project, project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+
+    project.name = payload.name
+
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A project with this name already exists.",
+        ) from error
+
+    session.refresh(project)
+
+    return project
+
+
+@app.delete(
+    "/api/v1/projects/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_project(
+    project_id: UUID,
+    session: DatabaseSession,
+) -> Response:
+    project = session.get(Project, project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+
+    session.delete(project)
+    session.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get(
@@ -317,6 +374,52 @@ def get_agent_session(
         )
 
     return agent_session
+
+
+@app.patch(
+    "/api/v1/sessions/{session_id}",
+    response_model=AgentSessionResponse,
+)
+def update_agent_session(
+    session_id: UUID,
+    payload: AgentSessionUpdate,
+    session: DatabaseSession,
+) -> AgentSession:
+    agent_session = session.get(AgentSession, session_id)
+
+    if agent_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent session not found.",
+        )
+
+    agent_session.title = payload.title
+    session.commit()
+    session.refresh(agent_session)
+
+    return agent_session
+
+
+@app.delete(
+    "/api/v1/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_agent_session(
+    session_id: UUID,
+    session: DatabaseSession,
+) -> Response:
+    agent_session = session.get(AgentSession, session_id)
+
+    if agent_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent session not found.",
+        )
+
+    session.delete(agent_session)
+    session.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get(

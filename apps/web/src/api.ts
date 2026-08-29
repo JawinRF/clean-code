@@ -123,3 +123,38 @@ export async function postApiJson<T>(
 
   return response.json() as Promise<T>;
 }
+
+export async function patchApiJson<T>(
+  path: string,
+  body: unknown,
+  signal: AbortSignal,
+): Promise<T> {
+  const response = await fetch(path, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response));
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export async function deleteApi(
+  path: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(path, {
+    method: 'DELETE',
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response));
+  }
+}

@@ -11,6 +11,13 @@ class AgentSessionCreate(BaseModel):
     )
 
 
+class AgentSessionUpdate(BaseModel):
+    title: str = Field(
+        min_length=1,
+        max_length=160,
+    )
+
+
 class AgentSessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -4,7 +4,11 @@ from app.schemas.agent_run import (
     AgentRunResponse,
     RunStatus,
 )
-from app.schemas.agent_session import AgentSessionCreate, AgentSessionResponse
+from app.schemas.agent_session import (
+    AgentSessionCreate,
+    AgentSessionResponse,
+    AgentSessionUpdate,
+)
 from app.schemas.message import (
     MessageContent,
     MessageCreate,
@@ -16,7 +20,7 @@ from app.schemas.model_catalog import (
     ModelCatalogProvider,
     ModelCatalogResponse,
 )
-from app.schemas.project import ProjectCreate, ProjectResponse
+from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 from app.schemas.run_event import RunEventResponse
 from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse
 
@@ -26,6 +30,7 @@ __all__ = [
     "AgentRunResponse",
     "AgentSessionCreate",
     "AgentSessionResponse",
+    "AgentSessionUpdate",
     "MessageContent",
     "MessageCreate",
     "MessageResponse",
@@ -34,6 +39,7 @@ __all__ = [
     "ModelCatalogResponse",
     "ProjectCreate",
     "ProjectResponse",
+    "ProjectUpdate",
     "RunEventResponse",
     "RunStatus",
     "TextMessagePart",

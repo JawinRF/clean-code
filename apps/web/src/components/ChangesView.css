@@ -1,72 +1,69 @@
-.workspace-tabs {
+.agent-workbench {
+  position: relative;
   display: flex;
   min-width: 0;
-  min-height: 52px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.conversation-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.changes-panel {
+  display: flex;
+  width: var(--changes-panel-width);
+  min-width: 0;
+  min-height: 0;
   flex: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px;
-  border-bottom: 1px solid #292a29;
-  background: #121312;
+  overflow: hidden;
+  border-left: 1px solid #292a29;
+  background: #141514;
 }
 
-.workspace-tab-list,
-.workspace-tab-controls {
-  display: flex;
-  align-items: center;
+.changes-panel-resizer {
+  position: relative;
+  z-index: 14;
+  width: 5px;
+  flex: none;
+  margin-right: -5px;
+  cursor: col-resize;
+  touch-action: none;
 }
 
-.workspace-tab-list {
-  min-width: 0;
-  gap: 2px;
-}
-
-.workspace-tab,
-.workspace-tab-icon,
-.workspace-tab-controls button {
-  display: inline-flex;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 7px;
+.changes-panel-resizer::after {
+  position: absolute;
+  inset: 0 auto 0 2px;
+  width: 1px;
   background: transparent;
-  color: #898c89;
-  cursor: pointer;
+  content: '';
 }
 
-.workspace-tab {
-  gap: 8px;
-  padding: 0 10px;
-  font-size: 15px;
-  font-weight: 480;
+.changes-panel-resizer:hover::after,
+.changes-panel-resizer[data-resizing]::after {
+  background: #6f7788;
 }
 
-.workspace-tab[data-active] {
-  background: #202120;
-  color: #f0f1f0;
+.changes-panel[data-resizing],
+.changes-panel-resizer[data-resizing] {
+  user-select: none;
 }
 
-.workspace-tab:hover:not([data-active]),
-.workspace-tab-icon:hover,
-.workspace-tab-controls button:hover {
-  background: #1a1b1a;
-  color: #c4c7c4;
-}
-
-.workspace-tab-icon,
-.workspace-tab-controls button {
-  width: 34px;
-  padding: 0;
-}
-
-.workspace-tab-controls {
-  flex: none;
-  gap: 4px;
+.changes-panel-toggle[data-active] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .changes-view {
+  position: relative;
   display: flex;
+  width: 100%;
   min-width: 0;
   min-height: 0;
   flex: 1;
@@ -74,6 +71,7 @@
   overflow: hidden;
   background: #141514;
   color: #e8e9e8;
+  container-type: inline-size;
 }
 
 .changes-toolbar {
@@ -335,12 +333,13 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
 .changed-file {
-  min-width: 680px;
+  min-width: 0;
   border-bottom: 1px solid #292a29;
 }
 
@@ -348,12 +347,16 @@
   display: grid;
   min-width: 0;
   min-height: 54px;
-  grid-template-columns: 25px minmax(0, auto) auto auto 1fr auto;
+  grid-template-columns: minmax(0, auto) auto auto 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 0 14px 0 20px;
   border-bottom: 1px solid #292a29;
   background: #141514;
+}
+
+.changed-file-header[data-has-symbol] {
+  grid-template-columns: 25px minmax(0, auto) auto auto 1fr auto;
 }
 
 .changed-file-header:hover {
@@ -383,10 +386,6 @@
 .changed-file-symbol[data-tone='python'] {
   color: #d9bd68;
   font-size: 11px;
-}
-
-.changed-file-symbol[data-tone='file'] {
-  color: #8d908d;
 }
 
 .changed-file-header strong {
@@ -426,11 +425,6 @@
 .changed-file-revert:hover {
   background: #232423;
   color: #c9cbc9;
-}
-
-.changed-file-revert[data-confirm] {
-  background: rgb(216 113 113 / 0.13);
-  color: #dc7d7d;
 }
 
 .changed-file-revert:disabled {
@@ -475,10 +469,22 @@
 
 .diff-viewer {
   min-width: 100%;
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 13px 0;
   background: #151615;
   font-family: var(--font-mono);
+  scrollbar-color: #424542 transparent;
+  scrollbar-width: thin;
+}
+
+.diff-viewer::-webkit-scrollbar {
+  height: 7px;
+}
+
+.diff-viewer::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #424542;
 }
 
 .diff-line {
@@ -582,7 +588,7 @@
 .diff-context-collapse {
   display: grid;
   width: calc(100% - 32px);
-  min-width: 648px;
+  min-width: 288px;
   min-height: 42px;
   grid-template-columns: 45px minmax(0, 1fr);
   align-items: center;
@@ -683,6 +689,112 @@
   color: #d87171;
 }
 
+.revert-confirmation-backdrop {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgb(0 0 0 / 0.52);
+}
+
+.revert-confirmation {
+  display: grid;
+  width: min(360px, 100%);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #3b3d3b;
+  border-radius: 8px;
+  background: #1b1c1b;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.46);
+  color: #dfe1df;
+}
+
+.revert-confirmation header {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+}
+
+.revert-confirmation header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.revert-confirmation-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 6px;
+  background: rgb(210 105 119 / 0.12);
+  color: #db7784;
+}
+
+.revert-confirmation strong {
+  color: #eceeec;
+  font-size: 13px;
+  font-weight: 580;
+}
+
+.revert-confirmation code {
+  overflow: hidden;
+  color: #919591;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revert-confirmation p {
+  margin: 0;
+  color: #a6a9a6;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.revert-confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.revert-confirmation-actions button {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #3b3d3b;
+  border-radius: 6px;
+  background: #222322;
+  color: #d4d6d4;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.revert-confirmation-actions button:hover {
+  border-color: #535653;
+  background: #282928;
+}
+
+.revert-confirmation-actions .revert-confirm-button {
+  border-color: #a84e5b;
+  background: #a84e5b;
+  color: #fff;
+}
+
+.revert-confirmation-actions .revert-confirm-button:hover {
+  border-color: #bc5b69;
+  background: #bc5b69;
+}
+
+.revert-confirmation-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .changes-spinner {
   width: 13px;
   height: 13px;
@@ -694,6 +806,34 @@
 
 @keyframes changes-spin {
   to { transform: rotate(360deg); }
+}
+
+@container (max-width: 620px) {
+  .changes-toolbar {
+    min-height: 98px;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 6px;
+    padding: 8px 9px 8px 12px;
+  }
+
+  .changes-summary {
+    width: 100%;
+    flex: 1 0 100%;
+  }
+
+  .changes-toolbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .changes-overflow {
+    margin-right: auto;
+  }
+
+  .commit-action-main {
+    max-width: none;
+  }
 }
 
 @media (max-width: 920px) {
@@ -734,6 +874,20 @@
   .commit-panel {
     right: -40px;
     width: min(330px, calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 900px) {
+  .changes-panel {
+    position: absolute;
+    z-index: 20;
+    inset: 0 0 0 auto;
+    max-width: calc(100% - 44px);
+    box-shadow: -18px 0 42px rgb(0 0 0 / 0.34);
+  }
+
+  .changes-panel-resizer {
+    display: none;
   }
 }
 

@@ -30,7 +30,7 @@ import {
 import { CleanCodeLogo } from './components/CleanCodeLogo';
 import { ConversationSearchBar } from './components/ConversationSearchBar';
 import { GlobalSearchDialog } from './components/GlobalSearchDialog';
-import { ChangesView, WorkspaceTabs } from './components/ChangesView';
+import { ChangesPanel } from './components/ChangesView';
 import { highlightMatch } from './utils/highlightMatch';
 import { messageSearchText } from './utils/transcriptSearch';
 import './App.css';
@@ -135,6 +135,7 @@ type IconName =
   | 'arrow-up'
   | 'arrow-down'
   | 'check'
+  | 'changes'
   | 'chevron'
   | 'close'
   | 'copy'
@@ -155,6 +156,7 @@ function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
     'arrow-up': <path d="m6 9 6-6 6 6M12 3v14" />,
     'arrow-down': <path d="m6 9 6 6 6-6" />,
     check: <path d="m5 12 4 4L19 6" />,
+    changes: <><path d="M8 4h8M8 20h8M6 8v8M18 8v8" /><rect x="3" y="8" width="6" height="8" rx="1" /><path d="M5.5 11h1M5.5 13h1" /></>,
     chevron: <path d="m9 18 6-6-6-6" />,
     close: <path d="m6 6 12 12M18 6 6 18" />,
     copy: <path d="M9 9h10v10H9zM5 15H4V5h10v1" />,
@@ -487,7 +489,7 @@ function App() {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isConversationSearchOpen, setIsConversationSearchOpen] = useState(false);
-  const [workspaceTab, setWorkspaceTab] = useState<'changes' | 'browser'>('browser');
+  const [isChangesPanelOpen, setIsChangesPanelOpen] = useState(true);
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
   const [conversationSearchActiveId, setConversationSearchActiveId] = useState<string | null>(null);
   const conversationRef = useRef<HTMLElement | null>(null);
@@ -1451,14 +1453,12 @@ function App() {
     setIsSidebarOpen(false);
     followConversationRef.current = true;
     setShowScrollToBottom(false);
-    setWorkspaceTab('browser');
   }, [activeTurn, isSubmitting, selectedWorkspaceId]);
 
   function selectStoredSession(sessionId: string) {
     setIsNewConversation(false);
     setSelectedSessionId(sessionId);
     setIsSidebarOpen(false);
-    setWorkspaceTab('browser');
   }
 
   useEffect(() => {
@@ -2267,16 +2267,8 @@ function App() {
       />
 
       <main className="agent-area">
-        <WorkspaceTabs
-          activeTab={workspaceTab}
-          onSelectTab={setWorkspaceTab}
-          onNewConversation={startNewConversation}
-          onOpenSidebar={() => setIsSidebarOpen(true)}
-        />
-        {workspaceTab === 'changes' ? (
-          <ChangesView workspace={selectedWorkspace} />
-        ) : (
-          <>
+        <div className="agent-workbench">
+          <section className="conversation-pane">
             <header className="agent-header">
           <button
             className="icon-button sidebar-toggle"
@@ -2297,6 +2289,17 @@ function App() {
             </div>
           </div>
           <div className="header-actions">
+            <button
+              type="button"
+              className="icon-button changes-panel-toggle"
+              data-active={isChangesPanelOpen || undefined}
+              aria-label={isChangesPanelOpen ? 'Close Git changes' : 'Open Git changes'}
+              title={isChangesPanelOpen ? 'Close Git changes' : 'Open Git changes'}
+              onClick={() => setIsChangesPanelOpen((isOpen) => !isOpen)}
+              disabled={selectedWorkspace === null}
+            >
+              <Icon name="changes" size={16} />
+            </button>
             <button
               type="button"
               className="icon-button"
@@ -2739,8 +2742,14 @@ function App() {
             )}
           </div>
             </footer>
-          </>
-        )}
+          </section>
+          {isChangesPanelOpen && (
+            <ChangesPanel
+              workspace={selectedWorkspace}
+              onClose={() => setIsChangesPanelOpen(false)}
+            />
+          )}
+        </div>
       </main>
 
       {isGlobalSearchOpen && (

@@ -2,8 +2,12 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import {
@@ -18,7 +22,6 @@ import { ShikiCode } from './SyntaxCode';
 import './ChangesView.css';
 
 
-type WorkspaceTab = 'changes' | 'browser';
 type CommitMode = 'branch' | 'current';
 
 type ChangesIconName =
@@ -31,8 +34,6 @@ type ChangesIconName =
   | 'collapse'
   | 'expand'
   | 'file'
-  | 'globe'
-  | 'layout'
   | 'more'
   | 'plus'
   | 'refresh'
@@ -43,6 +44,10 @@ type VisibleDiffRow =
   | { kind: 'collapse'; count: number; key: string };
 
 const CONTEXT_EDGE_LINES = 3;
+const CHANGES_PANEL_DEFAULT_WIDTH = 440;
+const CHANGES_PANEL_MIN_WIDTH = 320;
+const CONVERSATION_MIN_WIDTH = 320;
+const CHANGES_PANEL_KEYBOARD_STEP = 24;
 
 
 function ChangesIcon({ name, size = 16 }: { name: ChangesIconName; size?: number }) {
@@ -56,8 +61,6 @@ function ChangesIcon({ name, size = 16 }: { name: ChangesIconName; size?: number
     collapse: <path d="M8 3 3 8m0-5v5h5m8 13 5-5m0 5v-5h-5" />,
     expand: <path d="m14 4 6 0 0 6m0-6-7 7M10 20H4v-6m0 6 7-7" />,
     file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5" /></>,
-    globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
-    layout: <><rect x="3" y="5" width="18" height="14" rx="1.5" /><path d="M16 5v14" /></>,
     more: <path d="M6 12h.01M12 12h.01M18 12h.01" />,
     plus: <path d="M12 5v14M5 12h14" />,
     refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 8a7 7 0 0 1 11.7-1.9L20 8M4 16l2.2 1.9A7 7 0 0 0 17.9 16" />,
@@ -82,83 +85,6 @@ function ChangesIcon({ name, size = 16 }: { name: ChangesIconName; size?: number
 }
 
 
-export function WorkspaceTabs({
-  activeTab,
-  onSelectTab,
-  onNewConversation,
-  onOpenSidebar,
-}: {
-  activeTab: WorkspaceTab;
-  onSelectTab: (tab: WorkspaceTab) => void;
-  onNewConversation: () => void;
-  onOpenSidebar: () => void;
-}) {
-  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
-
-  useEffect(() => {
-    const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  async function toggleFullscreen() {
-    if (document.fullscreenElement !== null) {
-      await document.exitFullscreen();
-      return;
-    }
-
-    await document.documentElement.requestFullscreen();
-  }
-
-  return (
-    <nav className="workspace-tabs" aria-label="Workspace views">
-      <div className="workspace-tab-list">
-        <button
-          type="button"
-          className="workspace-tab"
-          data-active={activeTab === 'changes' || undefined}
-          onClick={() => onSelectTab('changes')}
-        >
-          <ChangesIcon name="changes" size={18} />
-          Changes
-        </button>
-        <button
-          type="button"
-          className="workspace-tab"
-          data-active={activeTab === 'browser' || undefined}
-          onClick={() => onSelectTab('browser')}
-        >
-          <ChangesIcon name="globe" size={18} />
-          Browser
-        </button>
-        <button
-          type="button"
-          className="workspace-tab-icon"
-          aria-label="New conversation"
-          title="New conversation"
-          onClick={onNewConversation}
-        >
-          <ChangesIcon name="plus" size={19} />
-        </button>
-      </div>
-      <div className="workspace-tab-controls">
-        <button
-          type="button"
-          aria-label={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-          title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-          onClick={() => void toggleFullscreen()}
-        >
-          <ChangesIcon name={isFullscreen ? 'collapse' : 'expand'} size={18} />
-        </button>
-        <button type="button" aria-label="Open project sidebar" title="Project sidebar" onClick={onOpenSidebar}>
-          <ChangesIcon name="layout" size={19} />
-        </button>
-      </div>
-    </nav>
-  );
-}
-
-
 function requestError(error: unknown): string {
   if (error instanceof DOMException && error.name === 'AbortError') {
     return 'The request timed out.';
@@ -168,14 +94,14 @@ function requestError(error: unknown): string {
 }
 
 
-function fileSymbol(file: GitChangedFileResponse): { text: string; tone: string } {
+function fileSymbol(file: GitChangedFileResponse): { text: string; tone: string } | null {
   if (file.language === 'json') return { text: '{}', tone: 'json' };
   if (file.language === 'css') return { text: '#', tone: 'css' };
   if (file.language === 'typescript' || file.language === 'javascript') {
     return { text: 'TS', tone: 'typescript' };
   }
   if (file.language === 'python') return { text: 'Py', tone: 'python' };
-  return { text: '·', tone: 'file' };
+  return null;
 }
 
 
@@ -298,7 +224,6 @@ function ChangedFile({
   file,
   selected,
   expandedContexts,
-  confirmingRevert,
   busyPath,
   onToggleSelected,
   onExpandContext,
@@ -308,7 +233,6 @@ function ChangedFile({
   file: GitChangedFileResponse;
   selected: boolean;
   expandedContexts: ReadonlySet<string>;
-  confirmingRevert: boolean;
   busyPath: string | null;
   onToggleSelected: () => void;
   onExpandContext: (key: string) => void;
@@ -323,8 +247,10 @@ function ChangedFile({
 
   return (
     <section className="changed-file" aria-labelledby={`file-${file.path}`}>
-      <header className="changed-file-header">
-        <span className="changed-file-symbol" data-tone={symbol.tone}>{symbol.text}</span>
+      <header className="changed-file-header" data-has-symbol={symbol !== null || undefined}>
+        {symbol !== null && (
+          <span className="changed-file-symbol" data-tone={symbol.tone}>{symbol.text}</span>
+        )}
         <strong id={`file-${file.path}`} title={file.path}>{file.path}</strong>
         {file.additions > 0 && <span className="git-additions">+{file.additions}</span>}
         {file.deletions > 0 && <span className="git-deletions">-{file.deletions}</span>}
@@ -332,17 +258,14 @@ function ChangedFile({
           <button
             type="button"
             className="changed-file-revert"
-            data-confirm={confirmingRevert || undefined}
-            aria-label={confirmingRevert ? `Confirm revert ${file.path}` : `Revert ${file.path}`}
-            title={confirmingRevert ? 'Click again to confirm revert' : 'Revert file'}
+            aria-label={`Revert ${file.path}`}
+            title="Revert file"
             onClick={onRequestRevert}
             disabled={busyPath !== null}
           >
             {busyPath === file.path
               ? <span className="changes-spinner" />
-              : confirmingRevert
-                ? <ChangesIcon name="check" size={17} />
-                : <ChangesIcon name="revert" size={19} />}
+              : <ChangesIcon name="revert" size={19} />}
           </button>
           <label className="changed-file-checkbox" title={selected ? 'Exclude file' : 'Include file'}>
             <input
@@ -466,7 +389,69 @@ function CommitPanel({
 }
 
 
-export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null }) {
+function RevertConfirmation({
+  file,
+  isReverting,
+  onCancel,
+  onConfirm,
+}: {
+  file: GitChangedFileResponse;
+  isReverting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="revert-confirmation-backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget && !isReverting) onCancel();
+      }}
+    >
+      <section
+        className="revert-confirmation"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="revert-confirmation-title"
+        aria-describedby="revert-confirmation-description"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !isReverting) onCancel();
+        }}
+      >
+        <header>
+          <span className="revert-confirmation-icon"><ChangesIcon name="revert" size={17} /></span>
+          <div>
+            <strong id="revert-confirmation-title">Discard file changes?</strong>
+            <code>{file.path}</code>
+          </div>
+        </header>
+        <p id="revert-confirmation-description">
+          {file.status === 'untracked'
+            ? 'This untracked file will be removed from the workspace.'
+            : 'All uncommitted changes in this file will be discarded.'}
+        </p>
+        <div className="revert-confirmation-actions">
+          <button type="button" onClick={onCancel} disabled={isReverting}>Cancel</button>
+          <button type="button" className="revert-confirm-button" onClick={onConfirm} disabled={isReverting} autoFocus>
+            {isReverting ? 'Reverting...' : 'Revert'}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
+export function ChangesView({
+  workspace,
+  isMaximized,
+  onToggleMaximize,
+  onClose,
+}: {
+  workspace: WorkspaceResponse | null;
+  isMaximized: boolean;
+  onToggleMaximize: () => void;
+  onClose: () => void;
+}) {
   const [changes, setChanges] = useState<GitChangesResponse | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [expandedContexts, setExpandedContexts] = useState<Set<string>>(new Set());
@@ -474,7 +459,7 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [busyPath, setBusyPath] = useState<string | null>(null);
-  const [confirmingRevert, setConfirmingRevert] = useState<string | null>(null);
+  const [revertCandidate, setRevertCandidate] = useState<GitChangedFileResponse | null>(null);
   const [isCommitOpen, setIsCommitOpen] = useState(false);
   const [commitMode, setCommitMode] = useState<CommitMode>('branch');
   const [isCommitting, setIsCommitting] = useState(false);
@@ -486,6 +471,7 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
       setSelectedPaths(new Set());
       setStatus('Select a workspace to inspect Git changes.');
       setError(null);
+      setRevertCandidate(null);
       return;
     }
 
@@ -505,6 +491,7 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
         [...currentPaths].filter((path) => response.files.some((file) => file.path === path)),
       ));
       setExpandedContexts(new Set());
+      setRevertCandidate(null);
       setStatus(
         response.files.length === 0
           ? 'Working tree clean'
@@ -527,16 +514,10 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
   async function revertFile(path: string) {
     if (workspace === null || busyPath !== null) return;
 
-    if (confirmingRevert !== path) {
-      setConfirmingRevert(path);
-      setStatus(`Click revert again to discard changes in ${path}.`);
-      return;
-    }
-
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
     setBusyPath(path);
-    setConfirmingRevert(null);
+    setRevertCandidate(null);
     setError(null);
 
     try {
@@ -656,8 +637,23 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
               />
             )}
           </div>
-          <button type="button" className="changes-side-control" aria-label="Changes panel layout" title="Changes panel layout">
-            <ChangesIcon name="layout" size={18} />
+          <button
+            type="button"
+            className="changes-side-control"
+            aria-label={isMaximized ? 'Restore changes panel width' : 'Maximize changes panel'}
+            title={isMaximized ? 'Restore panel width' : 'Maximize panel'}
+            onClick={onToggleMaximize}
+          >
+            <ChangesIcon name={isMaximized ? 'collapse' : 'expand'} size={18} />
+          </button>
+          <button
+            type="button"
+            className="changes-side-control"
+            aria-label="Close Git changes"
+            title="Close Git changes"
+            onClick={onClose}
+          >
+            <ChangesIcon name="close" size={17} />
           </button>
         </div>
       </header>
@@ -693,10 +689,8 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
             file={file}
             selected={selectedPaths.has(file.path)}
             expandedContexts={expandedContexts}
-            confirmingRevert={confirmingRevert === file.path}
             busyPath={busyPath}
             onToggleSelected={() => {
-              setConfirmingRevert(null);
               setSelectedPaths((currentPaths) => {
                 const nextPaths = new Set(currentPaths);
                 if (nextPaths.has(file.path)) nextPaths.delete(file.path);
@@ -709,7 +703,7 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
               nextContexts.add(key);
               return nextContexts;
             })}
-            onRequestRevert={() => void revertFile(file.path)}
+            onRequestRevert={() => setRevertCandidate(file)}
             onLineAction={(line) => setStatus(`Line action ready at ${file.path}:${lineNumber(line) ?? ''}`)}
           />
         ))}
@@ -718,6 +712,153 @@ export function ChangesView({ workspace }: { workspace: WorkspaceResponse | null
         <span>{status}</span>
         <span>{selectedPaths.size} selected</span>
       </footer>
+      {revertCandidate !== null && (
+        <RevertConfirmation
+          file={revertCandidate}
+          isReverting={busyPath === revertCandidate.path}
+          onCancel={() => setRevertCandidate(null)}
+          onConfirm={() => void revertFile(revertCandidate.path)}
+        />
+      )}
     </section>
+  );
+}
+
+
+export function ChangesPanel({
+  workspace,
+  onClose,
+}: {
+  workspace: WorkspaceResponse | null;
+  onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLElement | null>(null);
+  const previousWidthRef = useRef(CHANGES_PANEL_DEFAULT_WIDTH);
+  const resizeRef = useRef({
+    pointerId: null as number | null,
+    startX: 0,
+    startWidth: CHANGES_PANEL_DEFAULT_WIDTH,
+  });
+  const [width, setWidth] = useState(CHANGES_PANEL_DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  const widthLimits = useCallback(() => {
+    const workbenchWidth = panelRef.current?.parentElement?.getBoundingClientRect().width
+      ?? window.innerWidth;
+    const conversationWidth = window.innerWidth <= 900 ? 44 : CONVERSATION_MIN_WIDTH;
+    const maximum = Math.max(260, Math.floor(workbenchWidth - conversationWidth - 5));
+    return {
+      minimum: Math.min(CHANGES_PANEL_MIN_WIDTH, maximum),
+      maximum,
+    };
+  }, []);
+
+  const clampWidth = useCallback((candidate: number) => {
+    const limits = widthLimits();
+    return Math.min(limits.maximum, Math.max(limits.minimum, Math.round(candidate)));
+  }, [widthLimits]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWidth((currentWidth) => clampWidth(
+        isMaximized ? widthLimits().maximum : currentWidth,
+      ));
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [clampWidth, isMaximized, widthLimits]);
+
+  function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: width,
+    };
+    setIsMaximized(false);
+    setIsResizing(true);
+  }
+
+  function resize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (resizeRef.current.pointerId !== event.pointerId) return;
+
+    setWidth(clampWidth(
+      resizeRef.current.startWidth + resizeRef.current.startX - event.clientX,
+    ));
+  }
+
+  function finishResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (resizeRef.current.pointerId !== event.pointerId) return;
+
+    resize(event);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    resizeRef.current.pointerId = null;
+    setIsResizing(false);
+  }
+
+  function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+    event.preventDefault();
+    setIsMaximized(false);
+    const direction = event.key === 'ArrowLeft' ? 1 : -1;
+    setWidth((currentWidth) => clampWidth(
+      currentWidth + direction * CHANGES_PANEL_KEYBOARD_STEP,
+    ));
+  }
+
+  function toggleMaximized() {
+    if (isMaximized) {
+      setWidth(clampWidth(previousWidthRef.current));
+      setIsMaximized(false);
+      return;
+    }
+
+    previousWidthRef.current = width;
+    setWidth(widthLimits().maximum);
+    setIsMaximized(true);
+  }
+
+  const limits = widthLimits();
+
+  return (
+    <>
+      <div
+        className="changes-panel-resizer"
+        data-resizing={isResizing || undefined}
+        role="separator"
+        aria-label="Resize Git changes panel"
+        aria-orientation="vertical"
+        aria-valuemin={limits.minimum}
+        aria-valuemax={limits.maximum}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={beginResize}
+        onPointerMove={resize}
+        onPointerUp={finishResize}
+        onPointerCancel={finishResize}
+        onKeyDown={resizeWithKeyboard}
+      />
+      <aside
+        ref={panelRef}
+        className="changes-panel"
+        data-resizing={isResizing || undefined}
+        data-maximized={isMaximized || undefined}
+        style={{ '--changes-panel-width': `${width}px` } as CSSProperties}
+      >
+        <ChangesView
+          workspace={workspace}
+          isMaximized={isMaximized}
+          onToggleMaximize={toggleMaximized}
+          onClose={onClose}
+        />
+      </aside>
+    </>
   );
 }

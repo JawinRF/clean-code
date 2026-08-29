@@ -739,18 +739,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (
-      projects.length > 0
-      && !projects.some((project) => project.id === selectedProjectId)
-    ) {
-      const firstProjectId = projects[0].id;
-
-      setSelectedProjectId(firstProjectId);
-      setExpandedProjectId(firstProjectId);
-    }
-  }, [projects, selectedProjectId]);
-
-  useEffect(() => {
     setWorkspaces([]);
     setSelectedWorkspaceId(null);
     setExpandedWorkspaceId(null);
@@ -779,10 +767,6 @@ function App() {
     ).then((data) => {
       if (!active) return;
       setWorkspaces(data);
-      const firstWorkspaceId = data[0]?.id ?? null;
-
-      setSelectedWorkspaceId(firstWorkspaceId);
-      setExpandedWorkspaceId(firstWorkspaceId);
       setWorkspacesStatus(
         data.length === 0
           ? 'No workspaces found'
@@ -826,8 +810,6 @@ function App() {
     ).then((data) => {
       if (!active) return;
       setAgentSessions(data);
-      setSelectedSessionId(data[0]?.id ?? null);
-      setIsNewConversation(data.length === 0);
       setSessionsStatus(
         data.length === 0
           ? 'No sessions found'

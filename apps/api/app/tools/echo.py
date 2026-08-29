@@ -14,6 +14,7 @@ class EchoTool:
     name = "echo"
     description = "Return the supplied text without changing it."
     input_model = EchoInput
+    requires_approval = False
 
     async def execute(self, arguments: BaseModel) -> ToolResult:
         if not isinstance(arguments, EchoInput):

@@ -22,6 +22,11 @@ from app.schemas.model_catalog import (
 )
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 from app.schemas.run_event import RunEventResponse
+from app.schemas.tool_approval import (
+    ToolApprovalDecision,
+    ToolApprovalDecisionRequest,
+    ToolApprovalResponse,
+)
 from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse
 
 __all__ = [
@@ -43,6 +48,9 @@ __all__ = [
     "RunEventResponse",
     "RunStatus",
     "TextMessagePart",
+    "ToolApprovalDecision",
+    "ToolApprovalDecisionRequest",
+    "ToolApprovalResponse",
     "WorkspaceCreate",
     "WorkspaceResponse",
 ]

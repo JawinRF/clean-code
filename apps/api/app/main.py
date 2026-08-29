@@ -32,6 +32,8 @@ from app.schemas import (
     ProjectResponse,
     ProjectUpdate,
     RunEventResponse,
+    ToolApprovalDecisionRequest,
+    ToolApprovalResponse,
     WorkspaceCreate,
     WorkspaceResponse,
 )
@@ -42,6 +44,9 @@ from app.services import (
     RunTaskAlreadyActiveError,
     RunTaskSupervisor,
     RunTaskSupervisorClosedError,
+    ToolApprovalCoordinator,
+    ToolApprovalNotFoundError,
+    ToolApprovalRequest,
     append_run_event,
     load_model_catalog,
     model_is_configured,
@@ -56,7 +61,11 @@ DatabaseSession = Annotated[Session, Depends(get_database_session)]
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     load_model_catalog()
-    run_task_supervisor = RunTaskSupervisor()
+    approval_coordinator = ToolApprovalCoordinator()
+    run_task_supervisor = RunTaskSupervisor(
+        approval_coordinator=approval_coordinator,
+    )
+    application.state.approval_coordinator = approval_coordinator
     application.state.run_task_supervisor = run_task_supervisor
 
     try:
@@ -69,9 +78,19 @@ def get_run_task_supervisor(request: Request) -> RunTaskSupervisor:
     return request.app.state.run_task_supervisor
 
 
+def get_tool_approval_coordinator(
+    request: Request,
+) -> ToolApprovalCoordinator:
+    return request.app.state.approval_coordinator
+
+
 RunTasks = Annotated[
     RunTaskSupervisor,
     Depends(get_run_task_supervisor),
+]
+ToolApprovals = Annotated[
+    ToolApprovalCoordinator,
+    Depends(get_tool_approval_coordinator),
 ]
 
 app = FastAPI(
@@ -603,6 +622,60 @@ def list_run_events(
     )
 
     return list(session.scalars(statement))
+
+
+@app.get(
+    "/api/v1/runs/{run_id}/approvals",
+    response_model=list[ToolApprovalResponse],
+)
+async def list_pending_tool_approvals(
+    run_id: UUID,
+    session: DatabaseSession,
+    approvals: ToolApprovals,
+) -> tuple[ToolApprovalRequest, ...]:
+    agent_run = session.get(AgentRun, run_id)
+
+    if agent_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found.",
+        )
+
+    return approvals.pending_for_run(run_id)
+
+
+@app.post(
+    "/api/v1/runs/{run_id}/approvals/{approval_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def decide_tool_approval(
+    run_id: UUID,
+    approval_id: UUID,
+    payload: ToolApprovalDecisionRequest,
+    session: DatabaseSession,
+    approvals: ToolApprovals,
+) -> Response:
+    agent_run = session.get(AgentRun, run_id)
+
+    if agent_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found.",
+        )
+
+    try:
+        approvals.decide(
+            run_id=run_id,
+            approval_id=approval_id,
+            decision=payload.decision,
+        )
+    except ToolApprovalNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pending tool approval not found.",
+        ) from error
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post(

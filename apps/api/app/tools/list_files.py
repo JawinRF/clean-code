@@ -37,6 +37,7 @@ class ListFilesTool:
         "Paths are relative to the workspace root."
     )
     input_model = ListFilesInput
+    requires_approval = False
 
     def __init__(self, *, workspace_root: str | Path) -> None:
         self._workspace_root = Path(workspace_root).resolve(strict=True)

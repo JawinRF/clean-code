@@ -48,6 +48,10 @@ from app.services.tool_calls import (
     ToolCallAssemblyError,
 )
 from app.services.tool_execution import execute_tool_call
+from app.services.tool_approval import (
+    ToolApprovalCoordinator,
+    ToolApprovalRequest,
+)
 from app.tools import ToolRegistry, create_default_tool_registry
 
 
@@ -66,6 +70,84 @@ class TextRunExecutionError(Exception):
 
 class MaxAgentStepsError(Exception):
     pass
+
+
+def _append_tool_approval_decision(
+    database_session: Session,
+    *,
+    run_id: UUID,
+    approval: ToolApprovalRequest,
+    decision: str,
+) -> None:
+    append_run_event(
+        database_session,
+        run_id=run_id,
+        event_type="tool.approval.decided",
+        payload={
+            "approval_id": str(approval.id),
+            "call_id": approval.call_id,
+            "name": approval.tool_name,
+            "decision": decision,
+        },
+    )
+
+
+async def _request_tool_approval(
+    database_session: Session,
+    *,
+    approval_coordinator: ToolApprovalCoordinator,
+    run_id: UUID,
+    call_id: str,
+    tool_name: str,
+    arguments: dict[str, object],
+) -> bool:
+    approval = approval_coordinator.open(
+        run_id=run_id,
+        call_id=call_id,
+        tool_name=tool_name,
+        reason=f'Tool "{tool_name}" requires explicit user approval.',
+        arguments=arguments,
+    )
+
+    try:
+        append_run_event(
+            database_session,
+            run_id=run_id,
+            event_type="tool.approval.requested",
+            payload={
+                "approval_id": str(approval.id),
+                "call_id": call_id,
+                "name": tool_name,
+                "reason": approval.reason,
+            },
+        )
+        database_session.commit()
+    except Exception:
+        approval_coordinator.withdraw(approval.id)
+        raise
+
+    try:
+        decision = await approval_coordinator.wait(approval.id)
+    except CancelledError:
+        try:
+            _append_tool_approval_decision(
+                database_session,
+                run_id=run_id,
+                approval=approval,
+                decision="cancelled",
+            )
+            database_session.commit()
+        finally:
+            raise
+
+    _append_tool_approval_decision(
+        database_session,
+        run_id=run_id,
+        approval=approval,
+        decision=decision,
+    )
+    database_session.commit()
+    return decision == "approved"
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +346,7 @@ async def execute_text_run(
     system: str | None = None,
     adapter_factory: AdapterFactory = create_llm_adapter,
     tool_registry: ToolRegistry | None = None,
+    approval_coordinator: ToolApprovalCoordinator | None = None,
 ) -> Message:
     if max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be greater than zero.")
@@ -423,10 +506,29 @@ async def execute_text_run(
                     )
                     database_session.commit()
 
+                    approval_handler = None
+
+                    if approval_coordinator is not None:
+                        async def request_approval(
+                            tool_name: str,
+                            arguments: dict[str, object],
+                        ) -> bool:
+                            return await _request_tool_approval(
+                                database_session,
+                                approval_coordinator=approval_coordinator,
+                                run_id=run_id,
+                                call_id=tool_call.call_id,
+                                tool_name=tool_name,
+                                arguments=arguments,
+                            )
+
+                        approval_handler = request_approval
+
                     tool_result = await execute_tool_call(
                         registry=registry,
                         name=tool_call.name,
                         arguments_json=tool_call.arguments_json,
+                        approval_handler=approval_handler,
                     )
                     append_run_event(
                         database_session,

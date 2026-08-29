@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 import json
 
 from pydantic import ValidationError
@@ -5,11 +6,18 @@ from pydantic import ValidationError
 from app.tools import ToolRegistry, ToolResult, UnknownToolError
 
 
+ToolApprovalHandler = Callable[
+    [str, dict[str, object]],
+    Awaitable[bool],
+]
+
+
 async def execute_tool_call(
     *,
     registry: ToolRegistry,
     name: str,
     arguments_json: str,
+    approval_handler: ToolApprovalHandler | None = None,
 ) -> ToolResult:
     try:
         arguments_data = json.loads(arguments_json)
@@ -38,6 +46,27 @@ async def execute_tool_call(
         )
 
     try:
+        if tool.requires_approval:
+            if approval_handler is None:
+                return ToolResult(
+                    content=(
+                        f'Tool "{name}" requires explicit approval, but '
+                        "no approval handler is available."
+                    ),
+                    is_error=True,
+                )
+
+            approved = await approval_handler(
+                name,
+                validated_arguments.model_dump(mode="json"),
+            )
+
+            if not approved:
+                return ToolResult(
+                    content=f'Tool "{name}" was rejected by the user.',
+                    is_error=True,
+                )
+
         return await tool.execute(validated_arguments)
     except Exception:
         return ToolResult(

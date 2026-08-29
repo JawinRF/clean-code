@@ -30,6 +30,7 @@ class WriteFileTool:
         "an existing file."
     )
     input_model = WriteFileInput
+    requires_approval = True
 
     def __init__(self, *, workspace_root: str | Path) -> None:
         self._workspace_root = Path(workspace_root).resolve(strict=True)

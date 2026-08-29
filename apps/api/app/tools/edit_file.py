@@ -46,6 +46,7 @@ class EditFileTool:
         "replacing exact literal text."
     )
     input_model = EditFileInput
+    requires_approval = True
 
     def __init__(self, *, workspace_root: str | Path) -> None:
         self._workspace_root = Path(workspace_root).resolve(strict=True)

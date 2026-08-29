@@ -45,6 +45,12 @@ from app.services.tool_calls import (
     ToolCallAssemblyError,
 )
 from app.services.tool_execution import execute_tool_call
+from app.services.tool_approval import (
+    ToolApprovalCoordinator,
+    ToolApprovalDecision,
+    ToolApprovalNotFoundError,
+    ToolApprovalRequest,
+)
 from app.services.workspace_paths import (
     InvalidWorkspacePathError,
     InvalidWorkspaceRootError,
@@ -72,6 +78,10 @@ __all__ = [
     "TextRunExecutionError",
     "ToolCallAssembler",
     "ToolCallAssemblyError",
+    "ToolApprovalCoordinator",
+    "ToolApprovalDecision",
+    "ToolApprovalNotFoundError",
+    "ToolApprovalRequest",
     "UnsupportedMessageRoleError",
     "append_run_event",
     "build_provider_request",

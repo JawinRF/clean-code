@@ -14,6 +14,7 @@ class AgentTool(Protocol):
     name: str
     description: str
     input_model: type[BaseModel]
+    requires_approval: bool
 
     async def execute(self, arguments: BaseModel) -> ToolResult:
         ...

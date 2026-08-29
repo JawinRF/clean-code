@@ -13,6 +13,7 @@ from app.services.text_run import (
     TextRunExecutionError,
     execute_text_run,
 )
+from app.services.tool_approval import ToolApprovalCoordinator
 
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,13 @@ class RunTaskSupervisor:
         *,
         session_factory: DatabaseSessionFactory = SessionFactory,
         adapter_factory: AdapterFactory = create_llm_adapter,
+        approval_coordinator: ToolApprovalCoordinator | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._adapter_factory = adapter_factory
+        self._approval_coordinator = (
+            approval_coordinator or ToolApprovalCoordinator()
+        )
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
         self._closed = False
 
@@ -144,6 +149,7 @@ class RunTaskSupervisor:
                     max_steps=max_steps,
                     system=system,
                     adapter_factory=self._adapter_factory,
+                    approval_coordinator=self._approval_coordinator,
                 )
             except TextRunExecutionError:
                 return

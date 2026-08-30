@@ -12,6 +12,7 @@ from app.services.git_changes import (
 )
 from app.services.model_catalog import (
     ModelCatalogConfigurationError,
+    get_configured_model,
     load_model_catalog,
     model_is_configured,
 )
@@ -103,6 +104,7 @@ __all__ = [
     "execute_text_run",
     "execute_tool_call",
     "fail_agent_run",
+    "get_configured_model",
     "load_run_messages",
     "load_model_catalog",
     "load_run_workspace",

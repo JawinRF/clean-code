@@ -29,13 +29,14 @@ export type MessageResponse = {
 };
 
 export type ModelCatalogResponse = {
-  schema_version: 1;
+  schema_version: 2;
   providers: Array<{
     id: string;
     label: string;
     models: Array<{
       id: string;
       label: string;
+      context_window: number;
     }>;
   }>;
 };

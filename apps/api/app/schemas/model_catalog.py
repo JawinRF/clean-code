@@ -12,6 +12,7 @@ class ModelCatalogModel(BaseModel):
         min_length=1,
         max_length=160,
     )
+    context_window: int = Field(gt=0)
 
 
 class ModelCatalogProvider(BaseModel):
@@ -38,7 +39,7 @@ class ModelCatalogProvider(BaseModel):
 
 
 class ModelCatalogResponse(BaseModel):
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     providers: list[ModelCatalogProvider]
 
     @model_validator(mode="after")

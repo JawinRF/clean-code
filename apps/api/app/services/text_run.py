@@ -25,6 +25,18 @@ from app.providers.registry import (
     UnsupportedProviderError,
     create_llm_adapter,
 )
+from app.services.context_compaction import (
+    COMPACTION_MAX_ATTEMPTS,
+    ContextNode,
+    InvalidCompactionCheckpointError,
+    compact_context_if_needed,
+    load_context_nodes,
+)
+from app.services.model_catalog import (
+    ModelCatalogConfigurationError,
+    get_configured_model,
+    load_model_catalog,
+)
 from app.services.provider_requests import (
     UnsupportedMessageRoleError,
     build_provider_request,
@@ -198,6 +210,8 @@ def _safe_failure_details(error: Exception) -> tuple[str, str]:
             RunMessageBoundaryError,
             RunWorkspaceNotFoundError,
             UnsupportedMessageRoleError,
+            InvalidCompactionCheckpointError,
+            ModelCatalogConfigurationError,
         ),
     ):
         return (
@@ -377,15 +391,30 @@ async def execute_text_run(
         )
         provider_request = build_provider_request(
             model=model_name,
-            messages=run_messages,
+            messages=(),
             max_output_tokens=max_output_tokens,
             system=system,
             tools=registry.definitions(),
         )
+        model_config = get_configured_model(
+            load_model_catalog(),
+            provider_id=model_provider,
+            model_id=model_name,
+        )
+
+        if model_config is None:
+            raise ModelCatalogConfigurationError(
+                "The run model is not present in the model catalog."
+            )
+
+        context_nodes = load_context_nodes(
+            database_session,
+            session_id=session_id,
+            messages=run_messages,
+        )
         database_session.commit()
 
         adapter = adapter_factory(model_provider)
-        provider_messages = list(provider_request.messages)
 
         try:
             if adapter.provider_id != model_provider:
@@ -394,6 +423,23 @@ async def execute_text_run(
                 )
 
             for step in range(1, max_steps + 1):
+                for _ in range(COMPACTION_MAX_ATTEMPTS):
+                    compacted_nodes = await compact_context_if_needed(
+                        database_session,
+                        adapter=adapter,
+                        request=provider_request,
+                        nodes=context_nodes,
+                        run_id=run_id,
+                        step=step,
+                        provider_id=model_provider,
+                        context_window=model_config.context_window,
+                    )
+
+                    if compacted_nodes is context_nodes:
+                        break
+
+                    context_nodes = compacted_nodes
+
                 append_run_event(
                     database_session,
                     run_id=run_id,
@@ -404,7 +450,10 @@ async def execute_text_run(
 
                 step_request = ProviderRequest(
                     model=provider_request.model,
-                    messages=tuple(provider_messages),
+                    messages=tuple(
+                        node.message
+                        for node in context_nodes
+                    ),
                     max_output_tokens=provider_request.max_output_tokens,
                     system=provider_request.system,
                     tools=registry.definitions(),
@@ -552,16 +601,22 @@ async def execute_text_run(
                         )
                     )
 
-                provider_messages.append(
-                    ProviderMessage(
-                        role="assistant",
-                        content=tuple(assistant_blocks),
+                context_nodes.append(
+                    ContextNode(
+                        message=ProviderMessage(
+                            role="assistant",
+                            content=tuple(assistant_blocks),
+                        ),
+                        through_message_id=None,
                     )
                 )
-                provider_messages.append(
-                    ProviderMessage(
-                        role="user",
-                        content=tuple(tool_result_blocks),
+                context_nodes.append(
+                    ContextNode(
+                        message=ProviderMessage(
+                            role="user",
+                            content=tuple(tool_result_blocks),
+                        ),
+                        through_message_id=None,
                     )
                 )
 

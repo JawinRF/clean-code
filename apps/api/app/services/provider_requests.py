@@ -23,29 +23,10 @@ def build_provider_request(
     system: str | None = None,
     tools: tuple[ToolDefinition, ...] = (),
 ) -> ProviderRequest:
-    provider_messages: list[ProviderMessage] = []
-
-    for message in messages:
-        role: Literal["user", "assistant"]
-
-        if message.role == "user":
-            role = "user"
-        elif message.role == "assistant":
-            role = "assistant"
-        else:
-            raise UnsupportedMessageRoleError(
-                f'Cannot send message role "{message.role}" to the model.'
-            )
-
-        content = MessageContent.model_validate(message.content)
-        text = "".join(part.text for part in content.parts)
-
-        provider_messages.append(
-            ProviderMessage(
-                role=role,
-                content=(ProviderTextBlock(text=text),),
-            )
-        )
+    provider_messages = [
+        build_provider_message(message)
+        for message in messages
+    ]
 
     return ProviderRequest(
         model=model,
@@ -53,4 +34,25 @@ def build_provider_request(
         max_output_tokens=max_output_tokens,
         system=system,
         tools=tools,
+    )
+
+
+def build_provider_message(message: Message) -> ProviderMessage:
+    role: Literal["user", "assistant"]
+
+    if message.role == "user":
+        role = "user"
+    elif message.role == "assistant":
+        role = "assistant"
+    else:
+        raise UnsupportedMessageRoleError(
+            f'Cannot send message role "{message.role}" to the model.'
+        )
+
+    content = MessageContent.model_validate(message.content)
+    text = "".join(part.text for part in content.parts)
+
+    return ProviderMessage(
+        role=role,
+        content=(ProviderTextBlock(text=text),),
     )

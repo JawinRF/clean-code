@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.schemas import ModelCatalogResponse
+from app.schemas import ModelCatalogModel, ModelCatalogResponse
 
 
 MODEL_CATALOG_PATH = (
@@ -45,3 +45,20 @@ def model_is_configured(
         and any(model.id == model_id for model in provider.models)
         for provider in catalog.providers
     )
+
+
+def get_configured_model(
+    catalog: ModelCatalogResponse,
+    *,
+    provider_id: str,
+    model_id: str,
+) -> ModelCatalogModel | None:
+    for provider in catalog.providers:
+        if provider.id != provider_id:
+            continue
+
+        for model in provider.models:
+            if model.id == model_id:
+                return model
+
+    return None

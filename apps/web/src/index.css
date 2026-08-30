@@ -1,14 +1,14 @@
 :root {
-  --surface-base: #111211;
-  --surface-sidebar: #171817;
-  --surface-raised: #1d1e1d;
-  --surface-input: #202120;
-  --surface-code: #171917;
-  --surface-hover: #292a29;
-  --surface-hover-soft: #202220;
-  --surface-selected: #272827;
-  --border-subtle: #292b29;
-  --border-strong: #353735;
+  --surface-base: #121212;
+  --surface-sidebar: #171717;
+  --surface-raised: #1d1d1d;
+  --surface-input: #202020;
+  --surface-code: #171717;
+  --surface-hover: #292929;
+  --surface-hover-soft: #202020;
+  --surface-selected: #272727;
+  --border-subtle: #292929;
+  --border-strong: #353535;
   --text-primary: #f1f2f1;
   --text-secondary: #b8bbb8;
   --text-muted: #7f837f;
@@ -78,11 +78,11 @@ p {
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 8px;
-  background: #3b3e3b;
+  background: #3b3b3b;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #505450;
+  background: #505050;
   background-clip: padding-box;
 }

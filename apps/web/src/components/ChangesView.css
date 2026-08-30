@@ -23,8 +23,8 @@
   min-height: 0;
   flex: none;
   overflow: hidden;
-  border-left: 1px solid #292a29;
-  background: #141514;
+  border-left: 1px solid #292929;
+  background: #141414;
 }
 
 .changes-panel-resizer {
@@ -69,7 +69,7 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  background: #141514;
+  background: #141414;
   color: #e8e9e8;
   container-type: inline-size;
 }
@@ -85,8 +85,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 0 13px 0 18px;
-  border-bottom: 1px solid #292a29;
-  background: #141514;
+  border-bottom: 1px solid #292929;
+  background: #141414;
 }
 
 .changes-summary,
@@ -162,7 +162,7 @@
 
 .changes-overflow:hover,
 .changes-side-control:hover {
-  background: #202120;
+  background: #202020;
   color: #d6d8d6;
 }
 
@@ -176,7 +176,7 @@
   overflow: hidden;
   border-radius: 9px;
   background: #f1f2f1;
-  color: #171817;
+  color: #171717;
 }
 
 .commit-action button {
@@ -213,9 +213,9 @@
   width: 330px;
   gap: 10px;
   padding: 12px;
-  border: 1px solid #353735;
+  border: 1px solid #353535;
   border-radius: 8px;
-  background: #1a1b1a;
+  background: #1a1a1a;
   box-shadow: 0 16px 38px rgb(0 0 0 / 0.42);
   color: #dfe1df;
 }
@@ -258,7 +258,7 @@
 }
 
 .commit-panel header button:hover {
-  background: #282a28;
+  background: #282828;
   color: #e6e7e6;
 }
 
@@ -266,9 +266,9 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   padding: 2px;
-  border: 1px solid #303230;
+  border: 1px solid #303030;
   border-radius: 6px;
-  background: #151615;
+  background: #151515;
 }
 
 .commit-mode-switch button {
@@ -282,7 +282,7 @@
 }
 
 .commit-mode-switch button[data-active] {
-  background: #292a29;
+  background: #292929;
   color: #e4e5e4;
 }
 
@@ -295,10 +295,10 @@
   width: 100%;
   height: 32px;
   padding: 0 8px;
-  border: 1px solid #363836;
+  border: 1px solid #363636;
   border-radius: 5px;
   outline: none;
-  background: #202120;
+  background: #202020;
   color: #e8e9e8;
   font-size: 12px;
 }
@@ -318,7 +318,7 @@
   border: 0;
   border-radius: 6px;
   background: #eeefee;
-  color: #161716;
+  color: #161616;
   font-size: 11px;
   font-weight: 560;
   cursor: pointer;
@@ -340,7 +340,7 @@
 
 .changed-file {
   min-width: 0;
-  border-bottom: 1px solid #292a29;
+  border-bottom: 1px solid #292929;
 }
 
 .changed-file-header {
@@ -351,8 +351,8 @@
   align-items: center;
   gap: 8px;
   padding: 0 14px 0 20px;
-  border-bottom: 1px solid #292a29;
-  background: #141514;
+  border-bottom: 1px solid #292929;
+  background: #141414;
 }
 
 .changed-file-header[data-has-symbol] {
@@ -360,7 +360,7 @@
 }
 
 .changed-file-header:hover {
-  background: #161716;
+  background: #161616;
 }
 
 .changed-file-symbol {
@@ -423,7 +423,7 @@
 }
 
 .changed-file-revert:hover {
-  background: #232423;
+  background: #232323;
   color: #c9cbc9;
 }
 
@@ -451,15 +451,15 @@
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid #484b48;
+  border: 1px solid #484848;
   border-radius: 6px;
-  background: #1f201f;
+  background: #1f1f1f;
   color: #e5e7e5;
 }
 
 .changed-file-checkbox:hover > span {
   border-color: #6a6d6a;
-  background: #242524;
+  background: #242424;
 }
 
 .changed-file-checkbox input:focus-visible + span {
@@ -472,9 +472,9 @@
   overflow-x: auto;
   overflow-y: hidden;
   padding: 13px 0;
-  background: #151615;
+  background: #151515;
   font-family: var(--font-mono);
-  scrollbar-color: #424542 transparent;
+  scrollbar-color: #424242 transparent;
   scrollbar-width: thin;
 }
 
@@ -484,7 +484,7 @@
 
 .diff-viewer::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: #424542;
+  background: #424242;
 }
 
 .diff-line {
@@ -513,7 +513,7 @@
   min-height: 28px;
   grid-template-columns: 1fr 0;
   align-items: center;
-  background: #151615;
+  background: #151515;
 }
 
 .diff-line[data-type='deletion'] .diff-gutter {
@@ -555,7 +555,7 @@
   border-radius: 6px;
   opacity: 0;
   background: #f0f1f0;
-  color: #171817;
+  color: #171717;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
   cursor: pointer;
   transform: scale(0.94);
@@ -597,7 +597,7 @@
   overflow: hidden;
   border: 0;
   border-radius: 8px;
-  background: #1e1f1e;
+  background: #1e1e1e;
   color: #9a9d9a;
   font-family: var(--font-mono);
   font-size: 13px;
@@ -606,7 +606,7 @@
 }
 
 .diff-context-collapse:hover {
-  background: #232423;
+  background: #232323;
   color: #b6b9b6;
 }
 
@@ -614,7 +614,7 @@
   display: grid;
   height: 100%;
   place-content: center;
-  border-right: 1px solid #292b29;
+  border-right: 1px solid #292929;
   color: #8e928e;
 }
 
@@ -660,9 +660,9 @@
   height: 28px;
   margin-top: 3px;
   padding: 0 9px;
-  border: 1px solid #363836;
+  border: 1px solid #363636;
   border-radius: 6px;
-  background: #202120;
+  background: #202020;
   color: #c9cbc9;
   font-size: 11px;
   cursor: pointer;
@@ -679,8 +679,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  border-top: 1px solid #292a29;
-  background: #121312;
+  border-top: 1px solid #292929;
+  background: #121212;
   color: #696c69;
   font-size: 10px;
 }
@@ -704,9 +704,9 @@
   width: min(360px, 100%);
   gap: 12px;
   padding: 14px;
-  border: 1px solid #3b3d3b;
+  border: 1px solid #3b3b3b;
   border-radius: 8px;
-  background: #1b1c1b;
+  background: #1b1b1b;
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.46);
   color: #dfe1df;
 }
@@ -766,9 +766,9 @@
 .revert-confirmation-actions button {
   height: 30px;
   padding: 0 11px;
-  border: 1px solid #3b3d3b;
+  border: 1px solid #3b3b3b;
   border-radius: 6px;
-  background: #222322;
+  background: #222222;
   color: #d4d6d4;
   font-size: 11px;
   cursor: pointer;
@@ -776,7 +776,7 @@
 
 .revert-confirmation-actions button:hover {
   border-color: #535653;
-  background: #282928;
+  background: #282828;
 }
 
 .revert-confirmation-actions .revert-confirm-button {

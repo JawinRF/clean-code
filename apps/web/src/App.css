@@ -47,12 +47,12 @@
 }
 
 .sidebar {
-  --surface-raised: #252525;
-  --surface-hover: #2b2b2b;
-  --surface-hover-soft: #212121;
-  --surface-selected: #252525;
-  --border-subtle: #2d2d2d;
-  --border-strong: #393939;
+  --surface-raised: #202020;
+  --surface-hover: #272727;
+  --surface-hover-soft: #1c1c1c;
+  --surface-selected: #222222;
+  --border-subtle: #252525;
+  --border-strong: #323232;
   --text-primary: #f2f2f2;
   --text-secondary: #b9b9b9;
   --text-muted: #8c8c8c;
@@ -63,7 +63,7 @@
   padding: 10px 8px 8px;
   overflow: hidden;
   border-right: 1px solid var(--border-subtle);
-  background: #181818;
+  background: #141414;
 }
 
 .sidebar-brand {

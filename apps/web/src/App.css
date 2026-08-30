@@ -2461,19 +2461,23 @@
   color: var(--text-secondary);
 }
 
+.management-fields,
 .management-field {
   display: grid;
   gap: 6px;
+}
+
+.management-field {
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 520;
 }
 
-.management-field input {
+.management-field input,
+.management-field textarea {
   box-sizing: border-box;
   width: 100%;
-  height: 34px;
-  padding: 0 9px;
+  padding: 8px 9px;
   border: 1px solid var(--border-strong);
   border-radius: 7px;
   outline: none;
@@ -2483,7 +2487,19 @@
   font-size: 12px;
 }
 
-.management-field input:focus {
+.management-field input {
+  height: 34px;
+  padding-block: 0;
+}
+
+.management-field textarea {
+  min-height: 68px;
+  resize: vertical;
+  line-height: 17px;
+}
+
+.management-field input:focus,
+.management-field textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }

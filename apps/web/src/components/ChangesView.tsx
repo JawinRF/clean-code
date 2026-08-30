@@ -464,6 +464,7 @@ export function ChangesView({
   const [commitMode, setCommitMode] = useState<CommitMode>('branch');
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const selectionWorkspaceRef = useRef<string | null>(null);
 
   const loadChanges = useCallback(async () => {
     if (workspace === null) {
@@ -472,6 +473,7 @@ export function ChangesView({
       setStatus('Select a workspace to inspect Git changes.');
       setError(null);
       setRevertCandidate(null);
+      selectionWorkspaceRef.current = null;
       return;
     }
 
@@ -487,8 +489,14 @@ export function ChangesView({
         controller.signal,
       );
       setChanges(response);
-      setSelectedPaths((currentPaths) => new Set(
-        [...currentPaths].filter((path) => response.files.some((file) => file.path === path)),
+      const isFirstLoadForWorkspace = selectionWorkspaceRef.current !== workspace.id;
+      selectionWorkspaceRef.current = workspace.id;
+      setSelectedPaths((currentPaths) => (
+        isFirstLoadForWorkspace
+          ? new Set(response.files.map((file) => file.path))
+          : new Set(
+              [...currentPaths].filter((path) => response.files.some((file) => file.path === path)),
+            )
       ));
       setExpandedContexts(new Set());
       setRevertCandidate(null);
@@ -604,6 +612,7 @@ export function ChangesView({
               <button
                 type="button"
                 className="commit-action-main"
+                disabled={workspace === null || files.length === 0 || isCommitting}
                 onClick={() => {
                   setCommitMode('branch');
                   setCommitError(null);
@@ -615,8 +624,11 @@ export function ChangesView({
               <button
                 type="button"
                 className="commit-action-menu"
-                aria-label="Open commit options"
+                aria-label={`Commit to ${changes?.branch ?? 'current branch'}`}
+                title={`Commit to ${changes?.branch ?? 'current branch'}`}
+                disabled={workspace === null || files.length === 0 || isCommitting}
                 onClick={() => {
+                  setCommitMode('current');
                   setCommitError(null);
                   setIsCommitOpen((isOpen) => !isOpen);
                 }}

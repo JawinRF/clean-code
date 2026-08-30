@@ -213,6 +213,8 @@ def update_project(
         )
 
     project.name = payload.name
+    if "description" in payload.model_fields_set:
+        project.description = payload.description
 
     try:
         session.commit()

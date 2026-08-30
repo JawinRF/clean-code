@@ -82,6 +82,7 @@ type ManagedResource = {
   kind: 'project' | 'session';
   id: string;
   label: string;
+  description?: string | null;
 };
 
 type ResourceActionMenu = Pick<ManagedResource, 'kind' | 'id'>;
@@ -483,6 +484,7 @@ function App() {
   const [resourceActionMenu, setResourceActionMenu] = useState<ResourceActionMenu | null>(null);
   const [managementDialog, setManagementDialog] = useState<ManagementDialog | null>(null);
   const [managementValue, setManagementValue] = useState('');
+  const [managementDescription, setManagementDescription] = useState('');
   const [managementStatus, setManagementStatus] = useState('');
   const [isManagingResource, setIsManagingResource] = useState(false);
   const [isManagementDialogClosing, setIsManagementDialogClosing] = useState(false);
@@ -507,6 +509,8 @@ function App() {
     latestX: 0,
   });
   const sidebarResizeFrameRef = useRef<number | null>(null);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
 
   const closeManagementDialog = useCallback(() => {
     if (
@@ -1006,12 +1010,14 @@ function App() {
 
           if (!active) return;
 
-          setMessages(history);
-          setMessagesStatus(
-            history.length === 0
-              ? 'No messages found'
-              : `${history.length} message${history.length === 1 ? '' : 's'} loaded`,
-          );
+          if (selectedSessionIdRef.current === activeTurn.sessionId) {
+            setMessages(history);
+            setMessagesStatus(
+              history.length === 0
+                ? 'No messages found'
+                : `${history.length} message${history.length === 1 ? '' : 's'} loaded`,
+            );
+          }
           setTurnError(
             run.status === 'failed'
               ? run.error_message ?? 'The agent run failed.'
@@ -1125,6 +1131,7 @@ function App() {
     setResourceActionMenu(null);
     setManagementDialog({ ...resource, action });
     setManagementValue(resource.label);
+    setManagementDescription(resource.description ?? '');
     setManagementStatus('');
     setIsManagementDialogClosing(false);
     setRemovingResource(null);
@@ -1165,7 +1172,10 @@ function App() {
         if (managementDialog.kind === 'project') {
           updatedProject = await patchApiJson<ProjectResponse>(
             `/api/v1/projects/${managementDialog.id}`,
-            { name: nextLabel },
+            {
+              name: nextLabel,
+              description: managementDescription.trim() || null,
+            },
             controller.signal,
           );
         } else {
@@ -1211,7 +1221,7 @@ function App() {
         setProjects((currentProjects) => currentProjects.map((project) => (
           project.id === projectUpdate.id ? projectUpdate : project
         )));
-        setProjectsStatus(`Renamed project to ${projectUpdate.name}`);
+        setProjectsStatus(`Updated project ${projectUpdate.name}`);
       } else if (updatedSession !== null) {
         const sessionUpdate = updatedSession;
 
@@ -1801,8 +1811,10 @@ function App() {
     || modelOption.modelId.toLowerCase().includes(normalizedModelSearch)
     || modelOption.providerLabel.toLowerCase().includes(normalizedModelSearch)
   ));
-  const liveAssistantText = runEventText(runEvents);
-  const pendingApproval = pendingToolApprovals[0] ?? null;
+  const viewingActiveTurn = activeTurn !== null
+    && activeTurn.sessionId === selectedSessionId;
+  const liveAssistantText = viewingActiveTurn ? runEventText(runEvents) : '';
+  const pendingApproval = viewingActiveTurn ? pendingToolApprovals[0] ?? null : null;
   const answeringDecision = pendingApproval !== null
     && answeringApproval?.id === pendingApproval.id
     ? answeringApproval.decision
@@ -1827,7 +1839,9 @@ function App() {
         : selectedModelOption === undefined
           ? 'Select a model to start'
           : turnIsActive
-            ? 'Clean Code is responding...'
+            ? viewingActiveTurn
+              ? 'Clean Code is responding...'
+              : 'Another chat is responding...'
             : 'Message Clean Code';
 
   return (
@@ -2022,7 +2036,7 @@ function App() {
                     type="button"
                     aria-current={projectIsActive ? 'page' : undefined}
                     onClick={() => selectProject(project.id)}
-                    disabled={turnIsActive || isManagingResource}
+                    disabled={isManagingResource}
                   >
                     <span className="project-icon"><Icon name="folder" size={15} /></span>
                     <span className="project-row-copy">
@@ -2036,7 +2050,7 @@ function App() {
                     aria-label={`${projectIsExpanded ? 'Collapse' : 'Expand'} ${project.name}`}
                     aria-expanded={projectIsExpanded}
                     onClick={() => toggleProject(project.id)}
-                    disabled={turnIsActive || isManagingResource}
+                    disabled={isManagingResource}
                   >
                     <Icon name="chevron" size={12} />
                   </button>
@@ -2052,7 +2066,7 @@ function App() {
                       aria-expanded={projectMenuIsOpen}
                       data-open={projectMenuIsOpen || undefined}
                       onClick={() => toggleResourceActionMenu('project', project.id)}
-                      disabled={turnIsActive || isManagingResource}
+                      disabled={isManagingResource}
                     >
                       <Icon name="more" size={15} />
                     </button>
@@ -2062,12 +2076,17 @@ function App() {
                           type="button"
                           role="menuitem"
                           onClick={() => openManagementDialog(
-                            { kind: 'project', id: project.id, label: project.name },
+                            {
+                              kind: 'project',
+                              id: project.id,
+                              label: project.name,
+                              description: project.description,
+                            },
                             'rename',
                           )}
                         >
                           <Icon name="pencil" size={13} />
-                          Rename project
+                          Edit project
                         </button>
                         <button
                           className="resource-menu-danger"
@@ -2108,7 +2127,7 @@ function App() {
                               aria-current={workspaceIsActive ? 'page' : undefined}
                               title={workspace.root_path}
                               onClick={() => selectWorkspace(workspace.id)}
-                              disabled={turnIsActive || isManagingResource}
+                              disabled={isManagingResource}
                             >
                               <span className="workspace-icon"><Icon name="folder" size={14} /></span>
                               <span>{workspace.name}</span>
@@ -2119,7 +2138,7 @@ function App() {
                               aria-label={`${workspaceIsExpanded ? 'Collapse' : 'Expand'} ${workspace.name}`}
                               aria-expanded={workspaceIsExpanded}
                               onClick={() => toggleWorkspace(workspace.id)}
-                              disabled={turnIsActive || isManagingResource}
+                              disabled={isManagingResource}
                             >
                               <Icon name="chevron" size={11} />
                             </button>
@@ -2133,7 +2152,7 @@ function App() {
                                   data-active
                                   type="button"
                                   onClick={startNewConversation}
-                                  disabled={turnIsActive || isManagingResource}
+                                  disabled={isManagingResource}
                                 >
                                   <span className="session-icon"><Icon name="message" size={13} /></span>
                                   <span>New conversation</span>
@@ -2164,7 +2183,7 @@ function App() {
                                       type="button"
                                       aria-current={sessionIsActive ? 'page' : undefined}
                                       onClick={() => selectStoredSession(agentSession.id)}
-                                      disabled={turnIsActive || isManagingResource}
+                                      disabled={isManagingResource}
                                     >
                                       <span className="session-icon"><Icon name="message" size={13} /></span>
                                       <span>{agentSession.title}</span>
@@ -2511,7 +2530,7 @@ function App() {
                     </article>
                   );
                 })}
-                {(activeTurn !== null || liveAssistantText.length > 0) && (
+                {viewingActiveTurn && (
                   <article
                     className="transcript-message transcript-message--live"
                     data-role="assistant"
@@ -2788,7 +2807,9 @@ function App() {
               </span>
               <div>
                 <strong id="management-dialog-title">
-                  {managementDialog.action === 'rename' ? 'Rename' : 'Delete'}{' '}
+                  {managementDialog.action === 'rename'
+                    ? managementDialog.kind === 'project' ? 'Edit' : 'Rename'
+                    : 'Delete'}{' '}
                   {managementDialog.kind === 'project' ? 'project' : 'chat'}
                 </strong>
                 <small>{managementDialog.label}</small>
@@ -2796,17 +2817,31 @@ function App() {
             </div>
 
             {managementDialog.action === 'rename' ? (
-              <label className="management-field">
-                <span>{managementDialog.kind === 'project' ? 'Project name' : 'Chat title'}</span>
-                <input
-                  value={managementValue}
-                  onChange={(event) => setManagementValue(event.target.value)}
-                  maxLength={managementDialog.kind === 'project' ? 120 : 160}
-                  disabled={isManagingResource || isManagementDialogClosing}
-                  autoFocus
-                  required
-                />
-              </label>
+              <div className="management-fields">
+                <label className="management-field">
+                  <span>{managementDialog.kind === 'project' ? 'Project name' : 'Chat title'}</span>
+                  <input
+                    value={managementValue}
+                    onChange={(event) => setManagementValue(event.target.value)}
+                    maxLength={managementDialog.kind === 'project' ? 120 : 160}
+                    disabled={isManagingResource || isManagementDialogClosing}
+                    autoFocus
+                    required
+                  />
+                </label>
+                {managementDialog.kind === 'project' && (
+                  <label className="management-field">
+                    <span>Description</span>
+                    <textarea
+                      value={managementDescription}
+                      onChange={(event) => setManagementDescription(event.target.value)}
+                      rows={3}
+                      disabled={isManagingResource || isManagementDialogClosing}
+                      placeholder="Optional context"
+                    />
+                  </label>
+                )}
+              </div>
             ) : (
               <p className="management-warning">
                 {managementDialog.kind === 'project'
@@ -2834,8 +2869,12 @@ function App() {
                 disabled={isManagingResource || isManagementDialogClosing}
               >
                 {isManagingResource
-                  ? managementDialog.action === 'rename' ? 'Renaming...' : 'Deleting...'
-                  : managementDialog.action === 'rename' ? 'Rename' : 'Delete'}
+                  ? managementDialog.action === 'rename'
+                    ? managementDialog.kind === 'project' ? 'Saving...' : 'Renaming...'
+                    : 'Deleting...'
+                  : managementDialog.action === 'rename'
+                    ? managementDialog.kind === 'project' ? 'Save' : 'Rename'
+                    : 'Delete'}
               </button>
             </div>
           </form>

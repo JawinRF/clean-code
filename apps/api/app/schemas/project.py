@@ -17,6 +17,7 @@ class ProjectUpdate(BaseModel):
         min_length=1,
         max_length=120,
     )
+    description: str | None = None
 
 
 class ProjectResponse(BaseModel):

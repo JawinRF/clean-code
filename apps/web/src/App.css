@@ -1040,7 +1040,7 @@
 .composer-wrap {
   flex: none;
   padding: 14px 24px 10px;
-  background: linear-gradient(180deg, transparent, var(--surface-base) 24%);
+  background: var(--surface-base);
 }
 
 .composer {
@@ -1049,9 +1049,9 @@
   margin: 0 auto;
   padding: 10px 8px 7px;
   border: 1px solid var(--border-strong);
-  border-radius: 20px;
+  border-radius: 8px;
   background: var(--surface-input);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 0.2);
+  box-shadow: none;
 }
 
 .composer:focus-within {
@@ -1557,8 +1557,7 @@
   position: relative;
   z-index: 12;
   min-height: 50px;
-  background: rgb(18 18 18 / 0.94);
-  backdrop-filter: blur(12px);
+  background: var(--surface-base);
 }
 
 .agent-title {
@@ -1798,7 +1797,7 @@
 }
 
 .message-list {
-  gap: 30px;
+  gap: 24px;
 }
 
 .transcript-message {
@@ -1820,21 +1819,23 @@
 
 .transcript-message[data-role='user'] {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  padding-left: 40px;
 }
 
 .transcript-message[data-role='user'] .message-body {
-  width: fit-content;
-  max-width: min(590px, 82%);
+  width: 100%;
+  max-width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
 }
 
 .plain-message {
-  padding: 10px 15px;
-  border-radius: 18px;
-  background: var(--surface-raised);
+  padding: 10px 12px;
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0;
+  background: var(--surface-code);
   color: var(--text-primary);
   font-size: 14px;
   line-height: 22px;
@@ -2011,7 +2012,7 @@
 }
 
 .transcript-message[data-role='user'] .message-actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .message-actions time {
@@ -2052,7 +2053,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  box-shadow: none;
 }
 
 .thinking-indicator {
@@ -2119,7 +2120,7 @@
 }
 
 .composer {
-  border-radius: 16px;
+  border-radius: 8px;
 }
 
 .composer textarea {
@@ -2134,9 +2135,9 @@
 .approval-panel {
   overflow: hidden;
   border: 1px solid var(--border-strong);
-  border-radius: 11px;
+  border-radius: 6px;
   background: var(--surface-base);
-  box-shadow: 0 12px 30px rgb(0 0 0 / 0.28);
+  box-shadow: none;
 }
 
 .approval-strip {

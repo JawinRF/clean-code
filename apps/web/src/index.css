@@ -9,12 +9,12 @@
   --surface-selected: #272727;
   --border-subtle: #292929;
   --border-strong: #353535;
-  --text-primary: #f1f2f1;
-  --text-secondary: #b8bbb8;
-  --text-muted: #7f837f;
-  --text-faint: #575a57;
-  --accent: #7691ff;
-  --accent-soft: rgb(118 145 255 / 0.18);
+  --text-primary: #e8e8e8;
+  --text-secondary: #b8b8b8;
+  --text-muted: #858585;
+  --text-faint: #616161;
+  --accent: #bcbcbc;
+  --accent-soft: rgb(188 188 188 / 0.12);
   --success: #74b88a;
   --warning: #c9a55d;
   --danger: #d87171;

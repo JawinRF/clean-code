@@ -5,9 +5,10 @@ import json
 from time import monotonic
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Message
+from app.models import AgentRun, Message
 from app.providers import (
     LlmAdapter,
     ProviderContentBlock,
@@ -48,8 +49,8 @@ from app.services.run_context import (
     load_run_workspace,
 )
 from app.services.run_events import append_run_event
+from app.services.run_recovery import interrupt_agent_run
 from app.services.run_execution import (
-    cancel_running_agent_run,
     complete_agent_run,
     fail_agent_run,
     start_agent_run,
@@ -62,7 +63,7 @@ from app.services.tool_calls import (
 from app.services.tool_execution import execute_tool_call
 from app.services.tool_approval import (
     ToolApprovalCoordinator,
-    ToolApprovalRequest,
+    resolve_run_approvals,
 )
 from app.tools import ToolRegistry, create_default_tool_registry
 
@@ -84,26 +85,6 @@ class MaxAgentStepsError(Exception):
     pass
 
 
-def _append_tool_approval_decision(
-    database_session: Session,
-    *,
-    run_id: UUID,
-    approval: ToolApprovalRequest,
-    decision: str,
-) -> None:
-    append_run_event(
-        database_session,
-        run_id=run_id,
-        event_type="tool.approval.decided",
-        payload={
-            "approval_id": str(approval.id),
-            "call_id": approval.call_id,
-            "name": approval.tool_name,
-            "decision": decision,
-        },
-    )
-
-
 async def _request_tool_approval(
     database_session: Session,
     *,
@@ -114,6 +95,7 @@ async def _request_tool_approval(
     arguments: dict[str, object],
 ) -> bool:
     approval = approval_coordinator.open(
+        database_session,
         run_id=run_id,
         call_id=call_id,
         tool_name=tool_name,
@@ -121,44 +103,8 @@ async def _request_tool_approval(
         arguments=arguments,
     )
 
-    try:
-        append_run_event(
-            database_session,
-            run_id=run_id,
-            event_type="tool.approval.requested",
-            payload={
-                "approval_id": str(approval.id),
-                "call_id": call_id,
-                "name": tool_name,
-                "reason": approval.reason,
-            },
-        )
-        database_session.commit()
-    except Exception:
-        approval_coordinator.withdraw(approval.id)
-        raise
-
-    try:
-        decision = await approval_coordinator.wait(approval.id)
-    except CancelledError:
-        try:
-            _append_tool_approval_decision(
-                database_session,
-                run_id=run_id,
-                approval=approval,
-                decision="cancelled",
-            )
-            database_session.commit()
-        finally:
-            raise
-
-    _append_tool_approval_decision(
-        database_session,
-        run_id=run_id,
-        approval=approval,
-        decision=decision,
-    )
     database_session.commit()
+    decision = await approval_coordinator.wait(approval.id)
     return decision == "approved"
 
 
@@ -543,16 +489,6 @@ async def execute_text_run(
                             "arguments_json": tool_call.arguments_json,
                         },
                     )
-                    append_run_event(
-                        database_session,
-                        run_id=run_id,
-                        event_type="tool.execution.started",
-                        payload={
-                            "step": step,
-                            "call_id": tool_call.call_id,
-                            "name": tool_call.name,
-                        },
-                    )
                     database_session.commit()
 
                     approval_handler = None
@@ -573,11 +509,29 @@ async def execute_text_run(
 
                         approval_handler = request_approval
 
+                    def record_execution_start() -> None:
+                        current_run = database_session.scalar(
+                            select(AgentRun).where(AgentRun.id == run_id)
+                            .with_for_update().execution_options(populate_existing=True)
+                        )
+                        if (
+                            current_run is None or current_run.status != "running"
+                            or current_run.cancel_requested_at is not None
+                        ):
+                            raise CancelledError
+                        append_run_event(
+                            database_session, run_id=run_id,
+                            event_type="tool.execution.started",
+                            payload={"step": step, "call_id": tool_call.call_id, "name": tool_call.name},
+                        )
+                        database_session.commit()
+
                     tool_result = await execute_tool_call(
                         registry=registry,
                         name=tool_call.name,
                         arguments_json=tool_call.arguments_json,
                         approval_handler=approval_handler,
+                        on_execution_start=record_execution_start,
                     )
                     append_run_event(
                         database_session,
@@ -625,9 +579,10 @@ async def execute_text_run(
             await adapter.close()
     except CancelledError:
         database_session.rollback()
-        cancel_running_agent_run(
+        interrupt_agent_run(
             database_session,
             run_id=run_id,
+            reason="runtime_stopped",
         )
         database_session.commit()
         raise
@@ -641,6 +596,7 @@ async def execute_text_run(
             error_code=error_code,
             error_message=error_message,
         )
+        resolve_run_approvals(database_session, run_id=run_id, outcome="cancelled")
         database_session.commit()
 
         raise TextRunExecutionError(error_message) from error

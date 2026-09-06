@@ -46,7 +46,8 @@ export type AgentRunStatus =
   | 'running'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'interrupted';
 
 export type AgentRunResponse = {
   id: string;
@@ -81,6 +82,8 @@ export type ToolApprovalResponse = {
   reason: string;
   arguments: Record<string, unknown>;
   requested_at: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'interrupted';
+  resolved_at: string | null;
 };
 
 export type GitDiffLineResponse = {

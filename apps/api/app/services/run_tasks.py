@@ -14,6 +14,7 @@ from app.services.text_run import (
     execute_text_run,
 )
 from app.services.tool_approval import ToolApprovalCoordinator
+from app.services.run_recovery import interrupt_agent_run
 
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ class RunTaskSupervisor:
         self._session_factory = session_factory
         self._adapter_factory = adapter_factory
         self._approval_coordinator = (
-            approval_coordinator or ToolApprovalCoordinator()
+            approval_coordinator or ToolApprovalCoordinator(session_factory=session_factory)
         )
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
         self._closed = False
@@ -153,6 +154,16 @@ class RunTaskSupervisor:
                 )
             except TextRunExecutionError:
                 return
+            except asyncio.CancelledError:
+                database_session.rollback()
+                interrupt_agent_run(database_session, run_id=run_id, reason="runtime_stopped")
+                database_session.commit()
+                raise
+            except Exception:
+                database_session.rollback()
+                interrupt_agent_run(database_session, run_id=run_id, reason="execution_task_lost")
+                database_session.commit()
+                raise
 
     def _settle(
         self,

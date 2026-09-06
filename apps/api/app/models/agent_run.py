@@ -27,7 +27,8 @@ class AgentRun(Base):
                 "'running', "
                 "'completed', "
                 "'failed', "
-                "'cancelled'"
+                "'cancelled', "
+                "'interrupted'"
                 ")"
             ),
             name="ck_runs_status",

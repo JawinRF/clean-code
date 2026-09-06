@@ -11,6 +11,7 @@ RunStatus = Literal[
     "completed",
     "failed",
     "cancelled",
+    "interrupted",
 ]
 
 

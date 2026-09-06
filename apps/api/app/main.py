@@ -4,12 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import connect_to_database, get_database_session
+from app.database import SessionFactory, connect_to_database, get_database_session
 from app.models import (
     AgentRun,
     AgentSession,
@@ -65,6 +65,8 @@ from app.services import (
     revert_git_file,
     resolve_workspace_root,
 )
+from app.services.run_recovery import recover_abandoned_runs, runtime_ownership
+from app.services.tool_approval import ToolApprovalConflictError
 
 
 DatabaseSession = Annotated[Session, Depends(get_database_session)]
@@ -73,17 +75,24 @@ DatabaseSession = Annotated[Session, Depends(get_database_session)]
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     load_model_catalog()
-    approval_coordinator = ToolApprovalCoordinator()
-    run_task_supervisor = RunTaskSupervisor(
-        approval_coordinator=approval_coordinator,
-    )
-    application.state.approval_coordinator = approval_coordinator
-    application.state.run_task_supervisor = run_task_supervisor
+    with runtime_ownership():
+        with SessionFactory() as session:
+            recover_abandoned_runs(session)
+            session.commit()
+        approval_coordinator = ToolApprovalCoordinator()
+        run_task_supervisor = RunTaskSupervisor(
+            approval_coordinator=approval_coordinator,
+        )
+        application.state.approval_coordinator = approval_coordinator
+        application.state.run_task_supervisor = run_task_supervisor
 
-    try:
-        yield
-    finally:
-        await run_task_supervisor.close()
+        try:
+            yield
+        finally:
+            await run_task_supervisor.close()
+            with SessionFactory() as session:
+                recover_abandoned_runs(session)
+                session.commit()
 
 
 def get_run_task_supervisor(request: Request) -> RunTaskSupervisor:
@@ -819,6 +828,23 @@ def create_agent_run(
 
 
 @app.get(
+    "/api/v1/sessions/{session_id}/runs",
+    response_model=list[AgentRunResponse],
+)
+def list_session_runs(
+    session_id: UUID,
+    session: DatabaseSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[AgentRun]:
+    if session.get(AgentSession, session_id) is None:
+        raise HTTPException(status_code=404, detail="Agent session not found.")
+    return list(session.scalars(
+        select(AgentRun).where(AgentRun.session_id == session_id)
+        .order_by(AgentRun.created_at.desc(), AgentRun.id.desc()).limit(limit)
+    ))
+
+
+@app.get(
     "/api/v1/runs/{run_id}",
     response_model=AgentRunResponse,
 )
@@ -870,7 +896,8 @@ async def list_pending_tool_approvals(
     run_id: UUID,
     session: DatabaseSession,
     approvals: ToolApprovals,
-) -> tuple[ToolApprovalRequest, ...]:
+    include_resolved: bool = False,
+) -> list[ToolApprovalRequest]:
     agent_run = session.get(AgentRun, run_id)
 
     if agent_run is None:
@@ -879,7 +906,7 @@ async def list_pending_tool_approvals(
             detail="Agent run not found.",
         )
 
-    return approvals.pending_for_run(run_id)
+    return approvals.pending_for_run(session, run_id, include_resolved=include_resolved)
 
 
 @app.post(
@@ -903,14 +930,21 @@ async def decide_tool_approval(
 
     try:
         approvals.decide(
+            session,
             run_id=run_id,
             approval_id=approval_id,
             decision=payload.decision,
         )
+        session.commit()
     except ToolApprovalNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Pending tool approval not found.",
+        ) from error
+    except ToolApprovalConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
         ) from error
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

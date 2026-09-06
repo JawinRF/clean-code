@@ -31,6 +31,7 @@ import { CleanCodeLogo } from './components/CleanCodeLogo';
 import { ConversationSearchBar } from './components/ConversationSearchBar';
 import { GlobalSearchDialog } from './components/GlobalSearchDialog';
 import { ChangesPanel } from './components/ChangesView';
+import { InterruptedRunPanel, type InterruptedRun } from './components/InterruptedRunPanel';
 import { highlightMatch } from './utils/highlightMatch';
 import { messageSearchText } from './utils/transcriptSearch';
 import './App.css';
@@ -97,6 +98,7 @@ const TERMINAL_RUN_STATUSES = new Set([
   'completed',
   'failed',
   'cancelled',
+  'interrupted',
 ]);
 
 const SIDEBAR_MIN_WIDTH = 240;
@@ -476,6 +478,7 @@ function App() {
   const [turnStatus, setTurnStatus] = useState('Ready');
   const [turnError, setTurnError] = useState<string | null>(null);
   const [retryTurn, setRetryTurn] = useState<RetryTurn | null>(null);
+  const [interruptedRun, setInterruptedRun] = useState<InterruptedRun | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -511,6 +514,8 @@ function App() {
   const sidebarResizeFrameRef = useRef<number | null>(null);
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedSessionIdRef.current = selectedSessionId;
+  const activeTurnRef = useRef(activeTurn);
+  activeTurnRef.current = activeTurn;
 
   const closeManagementDialog = useCallback(() => {
     if (
@@ -851,10 +856,13 @@ function App() {
 
   useEffect(() => {
     setMessages([]);
-    setRunEvents([]);
-    setTurnStatus('Ready');
-    setTurnError(null);
-    setRetryTurn(null);
+    setInterruptedRun(null);
+    if (activeTurnRef.current === null) {
+      setRunEvents([]);
+      setTurnStatus('Ready');
+      setTurnError(null);
+      setRetryTurn(null);
+    }
     followConversationRef.current = true;
     setShowScrollToBottom(false);
 
@@ -872,10 +880,14 @@ function App() {
     const timeoutId = window.setTimeout(() => controller.abort(), 5000);
     setMessagesStatus('Loading messages...');
 
-    void getApiJson<MessageResponse[]>(
-      `/api/v1/sessions/${selectedSessionId}/messages`,
-      controller.signal,
-    ).then((data) => {
+    void Promise.all([
+      getApiJson<MessageResponse[]>(
+        `/api/v1/sessions/${selectedSessionId}/messages`, controller.signal,
+      ),
+      getApiJson<AgentRunResponse[]>(
+        `/api/v1/sessions/${selectedSessionId}/runs?limit=1`, controller.signal,
+      ),
+    ]).then(async ([data, runs]) => {
       if (!active) return;
       setMessages((currentMessages) => mergeSessionMessages(
         data,
@@ -887,6 +899,29 @@ function App() {
           ? 'No messages found'
           : `${data.length} message${data.length === 1 ? '' : 's'} loaded`,
       );
+      const latestRun = runs[0];
+      if (latestRun?.status === 'interrupted') {
+        const approvals = await getApiJson<ToolApprovalResponse[]>(
+          `/api/v1/runs/${latestRun.id}/approvals?include_resolved=true`, controller.signal,
+        );
+        if (active) {
+          setInterruptedRun({ run: latestRun, approvals });
+          if (activeTurnRef.current === null) setTurnStatus('Run interrupted');
+        }
+      } else if (
+        latestRun !== undefined
+        && !TERMINAL_RUN_STATUSES.has(latestRun.status)
+        && latestRun.trigger_message_id !== null
+      ) {
+        const triggerMessageId = latestRun.trigger_message_id;
+        setActiveTurn((current) => current ?? {
+          runId: latestRun.id,
+          sessionId: latestRun.session_id,
+          triggerMessageId,
+          providerId: latestRun.model_provider,
+          modelId: latestRun.model_name,
+        });
+      }
     }).catch((error: unknown) => {
       if (!active) return;
       setMessagesStatus(`Loading failed: ${requestErrorMessage(error)}`);
@@ -972,7 +1007,7 @@ function App() {
             requestController.signal,
           ),
           getApiJson<ToolApprovalResponse[]>(
-            `/api/v1/runs/${activeTurn.runId}/approvals`,
+            `/api/v1/runs/${activeTurn.runId}/approvals?include_resolved=true`,
             requestController.signal,
           ),
         ]);
@@ -980,15 +1015,16 @@ function App() {
         if (!active) return;
 
         setRunEvents(events);
-        setPendingToolApprovals(approvals);
+        const pendingApprovals = approvals.filter((approval) => approval.status === 'pending');
+        setPendingToolApprovals(pendingApprovals);
         setAnsweringApproval((currentApproval) => (
           currentApproval !== null
-          && approvals.some((approval) => approval.id === currentApproval.id)
+          && pendingApprovals.some((approval) => approval.id === currentApproval.id)
             ? currentApproval
             : null
         ));
 
-        if (approvals.length === 0) {
+        if (pendingApprovals.length === 0) {
           setApprovalError(null);
         }
 
@@ -1000,7 +1036,9 @@ function App() {
               ? 'Response complete'
               : run.status === 'cancelled'
                 ? 'Stopped'
-                : 'Generation failed',
+                : run.status === 'interrupted'
+                  ? 'Run interrupted'
+                  : 'Generation failed',
           );
 
           const history = await getApiJson<MessageResponse[]>(
@@ -1012,6 +1050,7 @@ function App() {
 
           if (selectedSessionIdRef.current === activeTurn.sessionId) {
             setMessages(history);
+            if (run.status === 'interrupted') setInterruptedRun({ run, approvals });
             setMessagesStatus(
               history.length === 0
                 ? 'No messages found'
@@ -1024,7 +1063,7 @@ function App() {
               : null,
           );
 
-          if (run.status === 'completed') {
+          if (run.status === 'completed' || run.status === 'interrupted') {
             setRunEvents([]);
             setRetryTurn(null);
           } else {
@@ -1047,7 +1086,7 @@ function App() {
         setTurnStatus(
           isStopping
             ? 'Stopping...'
-            : approvals.length > 0
+            : pendingApprovals.length > 0
               ? 'Waiting for approval...'
               : run.status === 'queued'
                 ? 'Starting...'
@@ -1551,6 +1590,7 @@ function App() {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 15000);
     setIsSubmitting(true);
+    setInterruptedRun(null);
     setTurnStatus('Sending message...');
     setTurnError(null);
     setRetryTurn(null);
@@ -1677,6 +1717,16 @@ function App() {
         setMessages(history);
         setMessagesStatus(`${history.length} messages loaded`);
         setTurnStatus('Response complete');
+        setRetryTurn(null);
+        return;
+      }
+
+      if (run?.status === 'interrupted') {
+        const approvals = await getApiJson<ToolApprovalResponse[]>(
+          `/api/v1/runs/${run.id}/approvals?include_resolved=true`, controller.signal,
+        );
+        if (selectedSessionIdRef.current === run.session_id) setInterruptedRun({ run, approvals });
+        setTurnStatus('Run interrupted');
         setRetryTurn(null);
         return;
       }
@@ -2589,6 +2639,9 @@ function App() {
         )}
 
         <footer className="composer-wrap">
+          {interruptedRun !== null && interruptedRun.run.session_id === selectedSessionId && (
+            <InterruptedRunPanel recovery={interruptedRun} />
+          )}
           {pendingApproval !== null ? (
             <ApprovalPanel
               approval={pendingApproval}

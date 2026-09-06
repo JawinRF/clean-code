@@ -2467,6 +2467,42 @@
   gap: 6px;
 }
 
+.interrupted-run-panel {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-base);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.interrupted-run-panel strong {
+  color: var(--text-primary);
+}
+
+.interrupted-run-panel p {
+  margin: 5px 0;
+}
+
+.interrupted-run-panel details {
+  margin-top: 8px;
+}
+
+.interrupted-run-panel summary {
+  cursor: pointer;
+}
+
+.interrupted-run-panel pre {
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--surface-input);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .management-field {
   color: var(--text-secondary);
   font-size: 11px;

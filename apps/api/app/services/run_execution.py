@@ -28,6 +28,7 @@ def start_agent_run(
         select(AgentRun)
         .where(AgentRun.id == run_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
     if agent_run is None:
@@ -66,6 +67,7 @@ def complete_agent_run(
         select(AgentRun)
         .where(AgentRun.id == run_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
     if agent_run is None:
@@ -104,6 +106,7 @@ def cancel_running_agent_run(
         select(AgentRun)
         .where(AgentRun.id == run_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
     if agent_run is None:
@@ -149,6 +152,7 @@ def fail_agent_run(
         select(AgentRun)
         .where(AgentRun.id == run_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
     if agent_run is None:

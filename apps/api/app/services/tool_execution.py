@@ -22,6 +22,7 @@ async def execute_tool_call(
     name: str,
     arguments_json: str,
     approval_handler: ToolApprovalHandler | None = None,
+    on_execution_start: Callable[[], None] | None = None,
 ) -> ToolResult:
     try:
         arguments_data = json.loads(arguments_json)
@@ -71,6 +72,8 @@ async def execute_tool_call(
                     is_error=True,
                 )
 
+        if on_execution_start is not None:
+            on_execution_start()
         return await tool.execute(validated_arguments)
     except Exception:
         logger.exception('Tool execution failed for "%s".', name)

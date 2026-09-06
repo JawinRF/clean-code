@@ -196,19 +196,22 @@ uv run alembic history
 ## Current limits
 
 - The runtime supports only the Anthropic provider.
-- Pending tool approvals are stored in application memory.
-- An API restart can remove a pending approval.
+- Tool approval requests and decisions are stored in PostgreSQL.
+- On startup, abandoned runs become `interrupted`. Their approval details and recorded results remain available in the chat. Interrupted tools are not automatically replayed.
+- A stopped tool with no recorded result has an unknown outcome. Inspect the workspace before retrying it.
+- Run one local API worker per database. A database advisory lock prevents a second runtime from interrupting a live runtime's work.
+- Restarting the runtime does not resume its Python coroutine. Send a follow-up after reviewing the interruption report.
 - The project does not have user authentication.
 - The Git interface does not push commits to a remote repository.
 - Conversation branching, rewind, and checkpoints are not complete.
-- Context compaction, subagents, MCP, and plan mode are not complete.
+- Context compaction is implemented. Subagents, MCP, and plan mode are not complete.
 - Production deployment is not configured.
 
 ## Development status
 
 The main agent path works from the web interface to the API, model provider, tools, approval flow, PostgreSQL records, and Git change view.
 
-The next work should improve reliability before it adds more tools. Durable approval storage is one important reliability task.
+Run `uv run alembic upgrade head` from `apps/api` before starting an updated API. Reopening a chat reloads its latest run and pending approval state from PostgreSQL.
 
 ## License
 

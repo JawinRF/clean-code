@@ -22,3 +22,5 @@ class ToolApprovalResponse(BaseModel):
     reason: str
     arguments: dict[str, object]
     requested_at: datetime
+    status: Literal["pending", "approved", "rejected", "cancelled", "interrupted"]
+    resolved_at: datetime | None

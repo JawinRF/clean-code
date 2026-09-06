@@ -96,6 +96,13 @@ def _safe_path(repository_root: Path, relative_path: str) -> Path:
 
 
 def _tracked_changes(repository_root: Path) -> list[tuple[str, str, str | None]]:
+    if _git(repository_root, "rev-parse", "--verify", "HEAD", check=False).returncode:
+        tracked = _git(repository_root, "ls-files", "-z").stdout
+        return [
+            ("added", _decode_path(path), None)
+            for path in tracked.split(b"\0")
+            if path
+        ]
     result = _git(
         repository_root,
         "diff",
@@ -145,7 +152,8 @@ def _untracked_changes(repository_root: Path) -> list[tuple[str, str, None]]:
     return [
         ("untracked", _decode_path(token), None)
         for token in result.stdout.split(b"\0")
-        if token
+        # Git reports embedded repositories as directories, not diffable files.
+        if token and not token.endswith(b"/")
     ]
 
 
@@ -390,7 +398,9 @@ def commit_git_files(
         "branch",
         "--show-current",
     ).stdout.decode("utf-8", errors="replace").strip()
-    original_head = _git(repository_root, "rev-parse", "HEAD").stdout.decode(
+    original_head = _git(
+        repository_root, "rev-parse", "--verify", "HEAD", check=False
+    ).stdout.decode(
         "utf-8",
         errors="replace",
     ).strip()

@@ -10,7 +10,11 @@ type Repository = {
 type Result = { message: string; url?: string; path?: string };
 type Action = 'push' | 'pull-requests' | 'clone';
 
-export function GitHubPanel({ workspace, onClose }: { workspace: WorkspaceResponse; onClose: () => void }) {
+export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
+  workspace: WorkspaceResponse;
+  onClose: () => void;
+  onAddWorkspace: (path: string) => void;
+}) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [repository, setRepository] = useState<Repository | null>(null);
   const [revision, setRevision] = useState(0);
@@ -125,7 +129,10 @@ export function GitHubPanel({ workspace, onClose }: { workspace: WorkspaceRespon
         {repository && repository.pull_requests.length > 0 && <div className="github-pulls"><strong>Open pull requests</strong>{repository.pull_requests.map((pr) => <a href={pr.url} key={pr.number} target="_blank" rel="noreferrer">#{pr.number} {pr.title}{pr.draft ? ' · Draft' : ''}</a>)}</div>}
       </>}
       {error && <p className="github-error" role="alert">{error}</p>}
-      {result && <div className="github-result" role="status"><p>{result.message}</p>{result.path && <code>{result.path}</code>}{result.url && <a href={result.url} target="_blank" rel="noreferrer">Open on GitHub ↗</a>}</div>}
+      {result && <div className="github-result" role="status"><p>{result.message}</p>{result.path && <>
+        <code>{result.path}</code>
+        <button type="button" disabled={busy} onClick={() => onAddWorkspace(result.path!)}>Add as workspace</button>
+      </>}{result.url && <a href={result.url} target="_blank" rel="noreferrer">Open on GitHub ↗</a>}</div>}
     </section>
   );
 }

@@ -2856,6 +2856,13 @@ function App() {
           </section>
           {isChangesPanelOpen && (
             <ChangesPanel
+              onAddWorkspace={(path) => {
+                setWorkspaceRootPath(path);
+                setWorkspaceName(path.split(/[\\/]/).filter(Boolean).at(-1) ?? 'Cloned repository');
+                setWorkspaceCreateStatus('Review the cloned folder, then select Add.');
+                setIsWorkspaceFormOpen(true);
+                setIsSidebarOpen(true);
+              }}
               workspace={selectedWorkspace}
               onClose={() => setIsChangesPanelOpen(false)}
             />

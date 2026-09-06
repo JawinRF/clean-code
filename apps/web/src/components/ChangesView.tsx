@@ -444,11 +444,13 @@ function RevertConfirmation({
 
 export function ChangesView({
   workspace,
+  onAddWorkspace,
   isMaximized,
   onToggleMaximize,
   onClose,
 }: {
   workspace: WorkspaceResponse | null;
+  onAddWorkspace: (path: string) => void;
   isMaximized: boolean;
   onToggleMaximize: () => void;
   onClose: () => void;
@@ -675,7 +677,7 @@ export function ChangesView({
         </div>
       </header>
 
-      {isGitHubOpen && workspace !== null && <GitHubPanel key={workspace.id} workspace={workspace} onClose={() => setIsGitHubOpen(false)} />}
+      {isGitHubOpen && workspace !== null && <GitHubPanel key={workspace.id} workspace={workspace} onClose={() => setIsGitHubOpen(false)} onAddWorkspace={onAddWorkspace} />}
       <div className="changes-scrollport">
         {workspace === null ? (
           <div className="changes-state">
@@ -745,9 +747,11 @@ export function ChangesView({
 
 export function ChangesPanel({
   workspace,
+  onAddWorkspace,
   onClose,
 }: {
   workspace: WorkspaceResponse | null;
+  onAddWorkspace: (path: string) => void;
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLElement | null>(null);
@@ -872,6 +876,7 @@ export function ChangesPanel({
       >
         <ChangesView
           workspace={workspace}
+          onAddWorkspace={onAddWorkspace}
           isMaximized={isMaximized}
           onToggleMaximize={toggleMaximized}
           onClose={onClose}

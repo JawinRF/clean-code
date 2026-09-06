@@ -34,6 +34,12 @@ import { ChangesPanel } from './components/ChangesView';
 import { InterruptedRunPanel, type InterruptedRun } from './components/InterruptedRunPanel';
 import { highlightMatch } from './utils/highlightMatch';
 import { messageSearchText } from './utils/transcriptSearch';
+import {
+  appendRunEventPage,
+  createRunEventBuffer,
+  RUN_EVENT_PAGE_SIZE,
+  type RunEventBuffer,
+} from './utils/runEventBuffer';
 import './App.css';
 
 type ReadyResponse = {
@@ -516,6 +522,7 @@ function App() {
   selectedSessionIdRef.current = selectedSessionId;
   const activeTurnRef = useRef(activeTurn);
   activeTurnRef.current = activeTurn;
+  const runEventBufferRef = useRef<RunEventBuffer | null>(null);
 
   const closeManagementDialog = useCallback(() => {
     if (
@@ -979,9 +986,26 @@ function App() {
   useEffect(() => {
     if (activeTurn === null) return undefined;
 
+    let eventBuffer = runEventBufferRef.current?.runId === activeTurn.runId
+      ? runEventBufferRef.current
+      : createRunEventBuffer(activeTurn.runId);
+    runEventBufferRef.current = eventBuffer;
+    setRunEvents(eventBuffer.events);
     let active = true;
     let pollTimeoutId: number | undefined;
     let requestController: AbortController | null = null;
+
+    const eventPagePath = () => (
+      `/api/v1/runs/${activeTurn.runId}/events`
+      + `?after_sequence=${eventBuffer.lastSequence}&limit=${RUN_EVENT_PAGE_SIZE}`
+    );
+    const applyEventPage = (page: RunEventResponse[]) => {
+      const next = appendRunEventPage(eventBuffer, page);
+      if (next === eventBuffer) return;
+      eventBuffer = next;
+      runEventBufferRef.current = next;
+      setRunEvents(next.events);
+    };
 
     const schedulePoll = (delay: number) => {
       pollTimeoutId = window.setTimeout(() => {
@@ -1003,7 +1027,7 @@ function App() {
             requestController.signal,
           ),
           getApiJson<RunEventResponse[]>(
-            `/api/v1/runs/${activeTurn.runId}/events`,
+            eventPagePath(),
             requestController.signal,
           ),
           getApiJson<ToolApprovalResponse[]>(
@@ -1014,7 +1038,18 @@ function App() {
 
         if (!active) return;
 
-        setRunEvents(events);
+        applyEventPage(events);
+        let hasMoreEvents = events.length === RUN_EVENT_PAGE_SIZE;
+        const runFinished = TERMINAL_RUN_STATUSES.has(run.status);
+        if (runFinished && !hasMoreEvents) {
+          // Read after observing the terminal status, so a parallel request cannot miss final events.
+          const finalEvents = await getApiJson<RunEventResponse[]>(
+            eventPagePath(), requestController.signal,
+          );
+          if (!active) return;
+          applyEventPage(finalEvents);
+          hasMoreEvents = finalEvents.length === RUN_EVENT_PAGE_SIZE;
+        }
         const pendingApprovals = approvals.filter((approval) => approval.status === 'pending');
         setPendingToolApprovals(pendingApprovals);
         setAnsweringApproval((currentApproval) => (
@@ -1030,7 +1065,7 @@ function App() {
 
         setTurnError(null);
 
-        if (TERMINAL_RUN_STATUSES.has(run.status)) {
+        if (runFinished && !hasMoreEvents) {
           setTurnStatus(
             run.status === 'completed'
               ? 'Response complete'
@@ -1076,6 +1111,7 @@ function App() {
           }
 
           setActiveTurn(null);
+          runEventBufferRef.current = null;
           setPendingToolApprovals([]);
           setAnsweringApproval(null);
           setApprovalError(null);
@@ -1084,7 +1120,9 @@ function App() {
         }
 
         setTurnStatus(
-          isStopping
+          runFinished
+            ? 'Loading saved run events...'
+            : isStopping
             ? 'Stopping...'
             : pendingApprovals.length > 0
               ? 'Waiting for approval...'
@@ -1092,7 +1130,7 @@ function App() {
                 ? 'Starting...'
                 : 'Generating...',
         );
-        schedulePoll(300);
+        schedulePoll(hasMoreEvents ? 0 : 300);
       } catch (error) {
         if (!active) return;
 

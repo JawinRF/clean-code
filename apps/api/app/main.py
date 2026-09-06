@@ -870,6 +870,8 @@ def get_agent_run(
 def list_run_events(
     run_id: UUID,
     session: DatabaseSession,
+    after_sequence: Annotated[int, Query(ge=-1)] = -1,
+    limit: Annotated[int | None, Query(ge=1, le=1000)] = None,
 ) -> list[RunEvent]:
     agent_run = session.get(AgentRun, run_id)
 
@@ -881,9 +883,11 @@ def list_run_events(
 
     statement = (
         select(RunEvent)
-        .where(RunEvent.run_id == run_id)
+        .where(RunEvent.run_id == run_id, RunEvent.sequence > after_sequence)
         .order_by(RunEvent.sequence.asc())
     )
+    if limit is not None:
+        statement = statement.limit(limit)
 
     return list(session.scalars(statement))
 

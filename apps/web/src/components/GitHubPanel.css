@@ -1,0 +1,31 @@
+.github-panel { flex: 0 1 auto; min-height: 0; max-height: 72vh; overflow: auto; padding: 14px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.github-panel header, .github-connection, .github-repository { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.github-panel header > div { display: grid; gap: 2px; }
+.github-panel strong { color: var(--text-primary); font-weight: 550; }
+.github-panel header strong { font-size: 14px; }
+.github-panel button { padding: 5px 9px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--surface-raised); color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.github-panel button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.github-panel button:disabled { opacity: .45; cursor: default; }
+.github-panel header button { border: 0; background: transparent; font-size: 19px; }
+.github-connection { padding: 12px 0; color: var(--text-muted); }
+.github-repository { padding: 10px 0; border-top: 1px solid var(--border-subtle); flex-wrap: wrap; }
+.github-panel a { color: var(--text-primary); text-decoration: none; overflow-wrap: anywhere; }
+.github-panel a:hover { text-decoration: underline; }
+.github-panel nav { display: flex; gap: 3px; padding: 3px 0 12px; }
+.github-panel nav button { border: 0; background: transparent; }
+.github-panel nav button[aria-pressed='true'] { background: var(--surface-hover); color: var(--text-primary); }
+.github-panel form { display: grid; gap: 12px; }
+.github-panel label:not(.github-checkbox) { display: grid; gap: 5px; }
+.github-panel input:not([type='checkbox']), .github-panel textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-input); color: var(--text-primary); font: inherit; }
+.github-panel textarea { resize: vertical; min-height: 70px; }
+.github-checkbox { display: flex; align-items: flex-start; gap: 7px; }
+.github-checkbox input { margin-top: 3px; accent-color: #b8b8b8; }
+.github-panel .github-primary { justify-self: start; background: #e5e5e5; color: #171717; border-color: transparent; }
+.github-panel .github-primary:hover:not(:disabled) { background: #fff; color: #111; }
+.github-signin, .github-result { display: grid; gap: 8px; padding: 10px 0; }
+.github-panel code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.github-pulls { display: grid; gap: 7px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.github-error { margin-top: 12px; color: var(--danger); }
+.github-toggle { flex: none; height: 30px; padding: 0 9px; border: 1px solid var(--border-subtle); border-radius: 5px; background: transparent; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.github-toggle:hover, .github-toggle[aria-expanded='true'] { background: var(--surface-hover); color: var(--text-primary); }
+.github-toggle:disabled { opacity: .4; cursor: default; }

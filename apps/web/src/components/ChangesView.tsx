@@ -19,6 +19,7 @@ import {
   type WorkspaceResponse,
 } from '../api';
 import { ShikiCode } from './SyntaxCode';
+import { GitHubPanel } from './GitHubPanel';
 import './ChangesView.css';
 
 
@@ -464,6 +465,7 @@ export function ChangesView({
   const [commitMode, setCommitMode] = useState<CommitMode>('branch');
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const [isGitHubOpen, setIsGitHubOpen] = useState(false);
   const selectionWorkspaceRef = useRef<string | null>(null);
 
   const loadChanges = useCallback(async () => {
@@ -597,6 +599,9 @@ export function ChangesView({
           </span>
         </div>
         <div className="changes-toolbar-actions">
+          <button type="button" className="github-toggle" disabled={workspace === null}
+            aria-label="GitHub workflows" aria-expanded={isGitHubOpen}
+            onClick={() => setIsGitHubOpen((value) => !value)}>GitHub</button>
           <button
             type="button"
             className="changes-overflow"
@@ -670,6 +675,7 @@ export function ChangesView({
         </div>
       </header>
 
+      {isGitHubOpen && workspace !== null && <GitHubPanel key={workspace.id} workspace={workspace} onClose={() => setIsGitHubOpen(false)} />}
       <div className="changes-scrollport">
         {workspace === null ? (
           <div className="changes-state">

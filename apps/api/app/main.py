@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import SessionFactory, connect_to_database, get_database_session
+from app.github_routes import router as github_router
 from app.models import (
     AgentRun,
     AgentSession,
@@ -119,6 +120,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.include_router(github_router)
 
 
 @app.get("/api/v1/health")

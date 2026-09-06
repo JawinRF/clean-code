@@ -202,7 +202,10 @@ uv run alembic history
 - Run one local API worker per database. A database advisory lock prevents a second runtime from interrupting a live runtime's work.
 - Restarting the runtime does not resume its Python coroutine. Send a follow-up after reviewing the interruption report.
 - The project does not have user authentication.
-- The Git interface does not push commits to a remote repository.
+- The Git changes panel includes GitHub account status, clone, branch push, and pull-request controls. It uses the local GitHub CLI account. First-time sign-in remains in `gh auth login --hostname github.com --web --git-protocol https`; check that GitHub CLI stores credentials in the system credential store.
+- GitHub controls require a local browser/runtime, a github.com repository, and explicit confirmation. Pushes use the reviewed commit and do not force-update branches. Pull requests require that commit to be pushed first. Git hooks remain enabled.
+- Cloning creates a new subfolder inside the selected workspace. Add the cloned folder as a workspace afterward. A failed or timed-out clone can leave a partial folder; it is not deleted automatically.
+- GitHub write requests are not automatically retried. If the network fails, check the remote result before trying again. Remote push, clone, and pull-request publication still need a user-approved end-to-end check.
 - Conversation branching, rewind, and checkpoints are not complete.
 - Context compaction is implemented. Subagents, MCP, and plan mode are not complete.
 - Production deployment is not configured.

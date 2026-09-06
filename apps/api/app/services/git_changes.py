@@ -323,6 +323,14 @@ def revert_git_file(workspace_root: str, path: str) -> GitChangesResponse:
             file_path.unlink()
         except OSError as error:
             raise GitOperationError("Could not remove the untracked file.") from error
+    elif changed_file.status == "added" and _git(
+        repository_root, "rev-parse", "--verify", "HEAD", check=False
+    ).returncode:
+        _git(repository_root, "rm", "--cached", "--", changed_file.path)
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError as error:
+            raise GitOperationError("Could not remove the newly added file.") from error
     elif changed_file.previous_path is not None:
         _git(
             repository_root,

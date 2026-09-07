@@ -72,6 +72,11 @@ def pull_request(workspace_id: UUID, payload: GitHubPullRequest, session: Databa
     return perform(github.create_pull_request, workspace_root(workspace_id, session), payload)
 
 
+@router.post('/workspaces/{workspace_id}/github/fetch')
+def fetch(workspace_id: UUID, payload: GitHubPushRequest, session: DatabaseSession) -> dict:
+    return perform(github.fetch_branches, workspace_root(workspace_id, session), payload)
+
+
 @router.post('/workspaces/{workspace_id}/github/clone')
 def clone(workspace_id: UUID, payload: GitHubCloneRequest, session: DatabaseSession) -> dict:
     return perform(github.clone_repository, workspace_root(workspace_id, session), payload)

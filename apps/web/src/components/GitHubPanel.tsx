@@ -9,7 +9,7 @@ type Repository = {
   pull_requests: Array<{ number: number; title: string; url: string; draft: boolean }>;
 };
 type Result = { message: string; url?: string; path?: string };
-type Action = 'push' | 'pull-requests' | 'clone';
+type Action = 'push' | 'fetch' | 'pull-requests' | 'clone';
 
 export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
   workspace: WorkspaceResponse;
@@ -123,7 +123,7 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
       {connection?.connected && <>
         {repositoryError && action !== 'clone' && <p className="github-error" role="alert">Repository unavailable: {repositoryError} You can still clone a repository into this workspace.</p>}
         {repository && <div className="github-repository"><a href={repository.url} target="_blank" rel="noreferrer">{repository.repository}</a><span>{repository.branch} · {repository.head.slice(0, 7)}</span></div>}
-        <nav aria-label="GitHub action">{(['push', 'pull-requests', 'clone'] as const).map((value) => <button key={value} type="button" aria-pressed={action === value} disabled={busy} onClick={() => { setAction(value); setConfirmed(false); setResult(null); setError(null); }}>{value === 'push' ? 'Push' : value === 'clone' ? 'Clone' : 'Pull request'}</button>)}</nav>
+        <nav aria-label="GitHub action">{(['push', 'fetch', 'pull-requests', 'clone'] as const).map((value) => <button key={value} type="button" aria-pressed={action === value} disabled={busy} onClick={() => { setAction(value); setConfirmed(false); setResult(null); setError(null); }}>{value === 'push' ? 'Push' : value === 'fetch' ? 'Fetch' : value === 'clone' ? 'Clone' : 'Pull request'}</button>)}</nav>
         <form onSubmit={(event) => void submit(event)}>
           {action === 'clone' ? <>
             <GitHubRepositoryPicker disabled={busy || loading} onSelect={(name) => {
@@ -134,16 +134,16 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
             <label>New folder<input value={directory} placeholder="repository-name" required pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} disabled={busy} onChange={(event) => { setDirectory(event.target.value); setConfirmed(false); }} /></label>
             <p>Destination: <code>{workspace.root_path}/{directory || 'new-folder'}</code>. Existing folders are never replaced. Add the cloned folder as a workspace after completion.</p>
           </> : repository ? <>
-            <p>{action === 'push' ? 'Publish the reviewed commit to this branch. No force push. Git hooks still run.' : 'Create a pull request from this branch. Push the current commit first.'}</p>
+            <p>{action === 'push' ? 'Publish the reviewed commit to this branch. No force push. Git hooks still run.' : action === 'fetch' ? 'Download origin branches into remote-tracking references. No merge, branch switch, tag update, or working-file changes.' : 'Create a pull request from this branch. Push the current commit first.'}</p>
             {action === 'pull-requests' && <>
               <label>Base branch<input value={base} required disabled={busy} onChange={(event) => { setBase(event.target.value); setConfirmed(false); }} /></label>
               <label>Title<input value={title} required maxLength={200} disabled={busy} onChange={(event) => { setTitle(event.target.value); setConfirmed(false); }} /></label>
               <label>Description<textarea value={body} rows={4} maxLength={50000} disabled={busy} onChange={(event) => { setBody(event.target.value); setConfirmed(false); }} /></label>
               <label className="github-checkbox"><input type="checkbox" checked={draft} disabled={busy} onChange={(event) => { setDraft(event.target.checked); setConfirmed(false); }} />Create as draft</label>
             </>}
-          </> : <p>Select a workspace whose origin is a GitHub repository to push or create a pull request.</p>}
+          </> : <p>Select a workspace whose origin is a GitHub repository to fetch, push, or create a pull request.</p>}
           <label className="github-checkbox"><input type="checkbox" checked={confirmed} disabled={busy || loading} onChange={(event) => setConfirmed(event.target.checked)} />I reviewed the destination and authorize this {action === 'pull-requests' ? 'pull request' : action}.</label>
-          <button className="github-primary" disabled={busy || loading || !confirmed || (action !== 'clone' && !repository)}>{busy ? 'Working…' : action === 'push' ? 'Push branch' : action === 'clone' ? 'Clone repository' : draft ? 'Create draft pull request' : 'Create pull request'}</button>
+          <button className="github-primary" disabled={busy || loading || !confirmed || (action !== 'clone' && !repository)}>{busy ? 'Working…' : action === 'push' ? 'Push branch' : action === 'fetch' ? 'Fetch origin branches' : action === 'clone' ? 'Clone repository' : draft ? 'Create draft pull request' : 'Create pull request'}</button>
         </form>
         {repository && repository.pull_requests.length > 0 && <div className="github-pulls"><strong>Open pull requests</strong>{repository.pull_requests.map((pr) => <a href={pr.url} key={pr.number} target="_blank" rel="noreferrer">#{pr.number} {pr.title}{pr.draft ? ' · Draft' : ''}</a>)}</div>}
       </>}

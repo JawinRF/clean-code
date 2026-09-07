@@ -129,6 +129,31 @@ def push_branch(workspace_root: str, request: GitHubPushRequest) -> dict:
     return {'message': f'Pushed {request.branch} to {state["repository"]}.', 'url': state['url']}
 
 
+def fetch_branches(workspace_root: str, request: GitHubPushRequest) -> dict:
+    root, state = _confirmed_repository(workspace_root, request)
+    origin = _git(root, 'remote', 'get-url', 'origin').stdout.decode().strip()
+    allowed_origins = {
+        f'https://github.com/{state["repository"]}',
+        f'https://github.com/{state["repository"]}.git',
+        f'git@github.com:{state["repository"]}.git',
+        f'git@github.com:{state["repository"]}',
+    }
+    if origin not in allowed_origins:
+        raise GitHubError('Origin fetch and push destinations differ. Review the Git remote configuration first.')
+    gh_path = shutil.which('gh')
+    if gh_path is None:
+        raise GitHubError('GitHub CLI is not installed.')
+    helper = f'!"{Path(gh_path).as_posix()}" auth git-credential'
+    _command('git', [
+        '-c', 'credential.helper=', '-c', f'credential.helper={helper}',
+        '-c', 'http.followRedirects=false',
+        'fetch', '--no-tags', '--no-prune', '--no-recurse-submodules', '--',
+        f'https://github.com/{state["repository"]}.git',
+        '+refs/heads/*:refs/remotes/origin/*',
+    ], cwd=root, timeout=120)
+    return {'message': 'Fetched origin branches. Local branches and working files were not changed.', 'url': state['url']}
+
+
 def create_pull_request(workspace_root: str, request: GitHubPullRequest) -> dict:
     _, state = _confirmed_repository(workspace_root, request)
     if request.base == request.branch:

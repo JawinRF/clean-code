@@ -22,6 +22,8 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [repositoryError, setRepositoryError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [title, setTitle] = useState('');
@@ -38,7 +40,10 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
     const timeout = window.setTimeout(() => controller.abort(), 100000);
     let active = true;
     setLoading(true);
+    setConnection(null);
     setRepository(null);
+    setConnectionError(null);
+    setRepositoryError(null);
     setConfirmed(false);
     setError(null);
     void (async () => {
@@ -47,12 +52,20 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
         if (!active) return;
         setConnection(account);
         if (!account.connected) return;
-        const repo = await getApiJson<Repository>(`/api/v1/workspaces/${workspace.id}/github`, controller.signal);
-        if (!active) return;
-        setRepository(repo);
-        setBase(repo.default_branch);
+        try {
+          const repo = await getApiJson<Repository>(`/api/v1/workspaces/${workspace.id}/github`, controller.signal);
+          if (!active) return;
+          setRepository(repo);
+          setBase(repo.default_branch);
+        } catch (failure) {
+          if (active) setRepositoryError(controller.signal.aborted
+            ? 'Repository check timed out. Select Refresh to try again.'
+            : failure instanceof Error ? failure.message : 'Repository status could not be loaded.');
+        }
       } catch (failure) {
-        if (active) setError(failure instanceof Error ? failure.message : 'GitHub status could not be loaded.');
+        if (active) setConnectionError(controller.signal.aborted
+          ? 'Connection check timed out. Select Refresh to try again.'
+          : failure instanceof Error ? failure.message : 'GitHub connection could not be checked.');
       } finally {
         window.clearTimeout(timeout);
         if (active) setLoading(false);
@@ -63,7 +76,7 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!confirmed || busy || loading) return;
+    if (!confirmed || busy || loading || !connection?.connected) return;
     if (action !== 'clone' && repository === null) return;
     setBusy(true);
     setError(null);
@@ -97,16 +110,17 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
       <header><div><strong>GitHub</strong><span>{connection?.login ? `Signed in as ${connection.login}` : 'Local account connection'}</span></div>
         <button type="button" onClick={onClose} disabled={busy} aria-label="Close GitHub panel">×</button></header>
       <div className="github-connection">
-        <span>{loading ? 'Checking connection…' : connection?.message}</span>
+        <span>{loading ? connection?.connected ? 'Checking repository…' : 'Checking connection…' : connection?.message ?? 'Connection status unavailable.'}</span>
         <button type="button" onClick={() => setRevision((value) => value + 1)} disabled={busy || loading}>Refresh</button>
       </div>
-      {!connection?.connected && !loading && <div className="github-signin">
+      {connection?.connected === false && !loading && <div className="github-signin">
         <strong>Connect on this computer</strong>
         <p>Run this in PowerShell, complete GitHub sign-in, then select Refresh.</p>
         <code>gh auth login --hostname github.com --web --git-protocol https</code>
         <p>Credentials stay with GitHub CLI. Check that it uses the system credential store. Clean Code does not receive your token.</p>
       </div>}
       {connection?.connected && <>
+        {repositoryError && action !== 'clone' && <p className="github-error" role="alert">Repository unavailable: {repositoryError} You can still clone a repository into this workspace.</p>}
         {repository && <div className="github-repository"><a href={repository.url} target="_blank" rel="noreferrer">{repository.repository}</a><span>{repository.branch} · {repository.head.slice(0, 7)}</span></div>}
         <nav aria-label="GitHub action">{(['push', 'pull-requests', 'clone'] as const).map((value) => <button key={value} type="button" aria-pressed={action === value} disabled={busy} onClick={() => { setAction(value); setConfirmed(false); setResult(null); setError(null); }}>{value === 'push' ? 'Push' : value === 'clone' ? 'Clone' : 'Pull request'}</button>)}</nav>
         <form onSubmit={(event) => void submit(event)}>
@@ -129,6 +143,7 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
         {repository && repository.pull_requests.length > 0 && <div className="github-pulls"><strong>Open pull requests</strong>{repository.pull_requests.map((pr) => <a href={pr.url} key={pr.number} target="_blank" rel="noreferrer">#{pr.number} {pr.title}{pr.draft ? ' · Draft' : ''}</a>)}</div>}
       </>}
       {error && <p className="github-error" role="alert">{error}</p>}
+      {connectionError && <p className="github-error" role="alert">Connection check failed: {connectionError}</p>}
       {result && <div className="github-result" role="status"><p>{result.message}</p>{result.path && <>
         <code>{result.path}</code>
         <button type="button" disabled={busy} onClick={() => onAddWorkspace(result.path!)}>Add as workspace</button>

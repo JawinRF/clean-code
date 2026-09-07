@@ -1,4 +1,5 @@
 import os
+from hashlib import sha256
 from pathlib import Path
 from stat import S_IMODE
 from tempfile import NamedTemporaryFile
@@ -51,7 +52,14 @@ class EditFileTool:
     def __init__(self, *, workspace_root: str | Path) -> None:
         self._workspace_root = Path(workspace_root).resolve(strict=True)
 
-    async def execute(self, arguments: BaseModel) -> ToolResult:
+    @property
+    def workspace_root(self) -> Path:
+        return self._workspace_root
+
+    async def execute(
+        self, arguments: BaseModel, *, expected_sha256: str | None = None,
+        expected_path: str | None = None,
+    ) -> ToolResult:
         if not isinstance(arguments, EditFileInput):
             raise TypeError(
                 "EditFileTool requires EditFileInput arguments."
@@ -80,8 +88,17 @@ class EditFileTool:
                 is_error=True,
             )
 
+        if expected_path is not None and target.relative_to(self._workspace_root).as_posix() != expected_path:
+            return ToolResult("Workspace path changed since the approval preview. Request a new approval.", True)
+
         try:
-            original_content = target.read_text(encoding="utf-8")
+            original_bytes = target.read_bytes()
+            if expected_sha256 is not None and sha256(original_bytes).hexdigest() != expected_sha256:
+                return ToolResult(
+                    content="Workspace file changed since the approval preview. Request a new approval.",
+                    is_error=True,
+                )
+            original_content = original_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         except UnicodeDecodeError:
             return ToolResult(
                 content="Workspace file is not valid UTF-8 text.",
@@ -124,9 +141,10 @@ class EditFileTool:
                 arguments.path,
             )
 
-            current_content = target.read_text(encoding="utf-8")
+            if expected_path is not None and target.relative_to(self._workspace_root).as_posix() != expected_path:
+                return ToolResult("Workspace path changed since the approval preview. Request a new approval.", True)
 
-            if current_content != original_content:
+            if target.read_bytes() != original_bytes:
                 return ToolResult(
                     content=(
                         "Workspace file changed during the edit. Read it "
@@ -152,6 +170,8 @@ class EditFileTool:
                 temporary_path = Path(temporary_file.name)
 
             temporary_path.chmod(original_mode)
+            if target.read_bytes() != original_bytes:
+                return ToolResult("Workspace file changed during the edit. Read it again and retry.", True)
             os.replace(temporary_path, target)
             temporary_path = None
         except (InvalidWorkspacePathError, OSError):

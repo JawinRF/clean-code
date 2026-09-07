@@ -41,6 +41,7 @@ import {
   type RunEventBuffer,
 } from './utils/runEventBuffer';
 import './App.css';
+import { readNavigationState, saveNavigationState } from './utils/navigationState';
 
 type ReadyResponse = {
   status: string;
@@ -444,6 +445,9 @@ function sessionTitleFrom(text: string): string {
 function App() {
   const [apiStatus, setApiStatus] = useState('Not checked');
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [savedNavigation] = useState(readNavigationState);
+  const restoringNavigation = useRef(savedNavigation);
+  const restoreProjectPending = useRef(true);
   const [projectsStatus, setProjectsStatus] = useState('Projects not loaded');
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
@@ -629,6 +633,16 @@ function App() {
 
       const data = (await response.json()) as ProjectResponse[];
       setProjects(data);
+      if (restoreProjectPending.current) {
+        restoreProjectPending.current = false;
+        const saved = restoringNavigation.current;
+        if (saved?.projectId && data.some((project) => project.id === saved.projectId)) {
+          setSelectedProjectId(saved.projectId);
+          setExpandedProjectId(saved.projectId);
+        } else {
+          restoringNavigation.current = null;
+        }
+      }
       setProjectsStatus(
         data.length === 0
           ? 'No projects found'
@@ -799,6 +813,17 @@ function App() {
     ).then((data) => {
       if (!active) return;
       setWorkspaces(data);
+      const saved = restoringNavigation.current;
+      if (saved?.projectId === selectedProjectId) {
+        if (data.some((workspace) => workspace.id === saved.workspaceId)) {
+          setSelectedWorkspaceId(saved.workspaceId);
+          setExpandedWorkspaceId(saved.workspaceId);
+        } else {
+          restoringNavigation.current = null;
+        }
+      } else {
+        restoringNavigation.current = null;
+      }
       setWorkspacesStatus(
         data.length === 0
           ? 'No workspaces found'
@@ -842,6 +867,11 @@ function App() {
     ).then((data) => {
       if (!active) return;
       setAgentSessions(data);
+      const saved = restoringNavigation.current;
+      if (saved?.workspaceId === selectedWorkspaceId && data.some((session) => session.id === saved.sessionId)) {
+        setSelectedSessionId(saved.sessionId);
+      }
+      restoringNavigation.current = null;
       setSessionsStatus(
         data.length === 0
           ? 'No sessions found'
@@ -860,6 +890,16 @@ function App() {
       window.clearTimeout(timeoutId);
     };
   }, [selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (restoreProjectPending.current || restoringNavigation.current !== null) return;
+    const projectId = projects.some((project) => project.id === selectedProjectId) ? selectedProjectId : null;
+    const workspaceId = projectId && workspaces.some((workspace) => workspace.id === selectedWorkspaceId && workspace.project_id === projectId)
+      ? selectedWorkspaceId : null;
+    const sessionId = workspaceId && agentSessions.some((session) => session.id === selectedSessionId && session.workspace_id === workspaceId)
+      ? selectedSessionId : null;
+    saveNavigationState({ projectId, workspaceId, sessionId });
+  }, [projects, workspaces, agentSessions, selectedProjectId, selectedWorkspaceId, selectedSessionId]);
 
   useEffect(() => {
     setMessages([]);

@@ -29,3 +29,9 @@
 .github-toggle { flex: none; height: 30px; padding: 0 9px; border: 1px solid var(--border-subtle); border-radius: 5px; background: transparent; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
 .github-toggle:hover, .github-toggle[aria-expanded='true'] { background: var(--surface-hover); color: var(--text-primary); }
 .github-toggle:disabled { opacity: .4; cursor: default; }
+.github-repo-picker { display: grid; gap: 8px; }
+.github-repo-list { display: grid; max-height: 220px; overflow: auto; margin-top: 8px; border: 1px solid var(--border-subtle); }
+.github-repo-list button { display: flex; justify-content: space-between; gap: 10px; text-align: left; border: 0; border-radius: 0; background: transparent; }
+.github-repo-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.github-repo-list small { color: var(--text-muted); flex: none; }
+.github-repo-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }

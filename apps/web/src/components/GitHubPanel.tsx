@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { getApiJson, postApiJson, type WorkspaceResponse } from '../api';
 import './GitHubPanel.css';
+import { GitHubRepositoryPicker } from './GitHubRepositoryPicker';
 
 type Connection = { connected: boolean; login: string | null; message: string };
 type Repository = {
@@ -125,6 +126,10 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
         <nav aria-label="GitHub action">{(['push', 'pull-requests', 'clone'] as const).map((value) => <button key={value} type="button" aria-pressed={action === value} disabled={busy} onClick={() => { setAction(value); setConfirmed(false); setResult(null); setError(null); }}>{value === 'push' ? 'Push' : value === 'clone' ? 'Clone' : 'Pull request'}</button>)}</nav>
         <form onSubmit={(event) => void submit(event)}>
           {action === 'clone' ? <>
+            <GitHubRepositoryPicker disabled={busy || loading} onSelect={(name) => {
+              setCloneRepo(name);
+              setConfirmed(false);
+            }} />
             <label>Repository<input value={cloneRepo} placeholder="owner/repository" required maxLength={160} disabled={busy} onChange={(event) => { setCloneRepo(event.target.value); setConfirmed(false); }} /></label>
             <label>New folder<input value={directory} placeholder="repository-name" required pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} disabled={busy} onChange={(event) => { setDirectory(event.target.value); setConfirmed(false); }} /></label>
             <p>Destination: <code>{workspace.root_path}/{directory || 'new-folder'}</code>. Existing folders are never replaced. Add the cloned folder as a workspace after completion.</p>

@@ -2,7 +2,7 @@ from typing import Annotated
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_database_session
@@ -50,6 +50,11 @@ def perform(operation, *args) -> dict:
 @router.get('/github/connection')
 def connection() -> dict:
     return github.connection_status()
+
+
+@router.get('/github/repositories')
+def repositories(page: Annotated[int, Query(ge=1, le=1000)] = 1) -> dict:
+    return perform(github.list_repositories, page)
 
 
 @router.get('/workspaces/{workspace_id}/github')

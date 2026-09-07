@@ -90,6 +90,22 @@ def repository_status(workspace_root: str) -> dict:
     }
 
 
+def list_repositories(page: int = 1) -> dict:
+    if not 1 <= page <= 1000:
+        raise GitHubError('Repository page must be between 1 and 1000.')
+    items = _api(f'user/repos?sort=updated&direction=desc&per_page=30&page={page}')
+    if not isinstance(items, list):
+        raise GitHubError('GitHub returned an invalid repository list.')
+    try:
+        repositories = [
+            {'name': repository_name(item['full_name']), 'private': bool(item['private'])}
+            for item in items
+        ]
+    except (KeyError, TypeError) as error:
+        raise GitHubError('GitHub returned an invalid repository entry.') from error
+    return {'repositories': repositories, 'page': page, 'has_more': len(items) == 30 and page < 1000}
+
+
 def _confirmed_repository(workspace_root: str, request: GitHubPushRequest) -> tuple[Path, dict]:
     if not request.confirmed:
         raise GitHubError('Confirm the destination and action before continuing.')

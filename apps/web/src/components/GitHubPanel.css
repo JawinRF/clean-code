@@ -35,3 +35,4 @@
 .github-repo-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .github-repo-list small { color: var(--text-muted); flex: none; }
 .github-repo-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.github-sync { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; margin: 0 0 10px; }

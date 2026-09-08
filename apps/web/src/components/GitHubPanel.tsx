@@ -6,6 +6,7 @@ import { GitHubRepositoryPicker } from './GitHubRepositoryPicker';
 type Connection = { connected: boolean; login: string | null; message: string };
 type Repository = {
   repository: string; branch: string; head: string; default_branch: string; url: string;
+  sync?: { ahead: number; behind: number; remote_head: string } | null;
   pull_requests: Array<{ number: number; title: string; url: string; draft: boolean }>;
 };
 type Result = { message: string; url?: string; path?: string };
@@ -123,6 +124,11 @@ export function GitHubPanel({ workspace, onClose, onAddWorkspace }: {
       {connection?.connected && <>
         {repositoryError && action !== 'clone' && <p className="github-error" role="alert">Repository unavailable: {repositoryError} You can still clone a repository into this workspace.</p>}
         {repository && <div className="github-repository"><a href={repository.url} target="_blank" rel="noreferrer">{repository.repository}</a><span>{repository.branch} · {repository.head.slice(0, 7)}</span></div>}
+        {repository && <p className="github-sync" role="status">
+          {repository.sync
+            ? `${repository.sync.ahead} ahead · ${repository.sync.behind} behind origin/${repository.branch} (${repository.sync.remote_head.slice(0, 7)}). Based on the local remote-tracking reference; Fetch to refresh.`
+            : 'Branch comparison unavailable. Fetch first. A remote branch or complete local history may be missing.'}
+        </p>}
         <nav aria-label="GitHub action">{(['push', 'fetch', 'pull-requests', 'clone'] as const).map((value) => <button key={value} type="button" aria-pressed={action === value} disabled={busy} onClick={() => { setAction(value); setConfirmed(false); setResult(null); setError(null); }}>{value === 'push' ? 'Push' : value === 'fetch' ? 'Fetch' : value === 'clone' ? 'Clone' : 'Pull request'}</button>)}</nav>
         <form onSubmit={(event) => void submit(event)}>
           {action === 'clone' ? <>

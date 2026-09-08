@@ -65,6 +65,19 @@ def connection_status() -> dict:
         return {'connected': False, 'login': None, 'message': str(error)}
 
 
+def branch_sync_status(root: Path, branch: str, head: str) -> dict | None:
+    if _git(root, 'rev-parse', '--is-shallow-repository').stdout.strip() == b'true':
+        return None
+    remote_head = _git(root, 'rev-parse', '--verify', f'refs/remotes/origin/{branch}^{{commit}}', check=False)
+    if remote_head.returncode:
+        return None
+    remote_sha = remote_head.stdout.decode().strip()
+    counts = _git(root, 'rev-list', '--left-right', '--count', f'{head}...{remote_sha}', '--').stdout.split()
+    if len(counts) != 2:
+        raise GitHubError('Git returned an invalid branch comparison.')
+    return {'ahead': int(counts[0]), 'behind': int(counts[1]), 'remote_head': remote_sha}
+
+
 def repository_status(workspace_root: str) -> dict:
     root = _repository_root(workspace_root)
     remote = _git(root, 'remote', 'get-url', '--push', 'origin', check=False)
@@ -81,6 +94,7 @@ def repository_status(workspace_root: str) -> dict:
     pulls = _api(f'repos/{repository}/pulls?state=open&per_page=20&head={quote(repository.split("/")[0] + ":" + branch, safe="")}')
     return {
         'repository': repository, 'branch': branch, 'head': head,
+        'sync': branch_sync_status(root, branch, head),
         'default_branch': details['default_branch'],
         'url': f'https://github.com/{repository}',
         'pull_requests': [

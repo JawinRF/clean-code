@@ -83,6 +83,7 @@ class ToolApprovalCoordinator:
         tool_name: str,
         reason: str,
         arguments: dict[str, object],
+        file_preview: dict[str, object] | None = None,
     ) -> ToolApproval:
         run = database_session.scalar(
             select(AgentRun).where(AgentRun.id == run_id)
@@ -96,6 +97,7 @@ class ToolApprovalCoordinator:
         approval = ToolApproval(
             run_id=run_id, call_id=call_id, tool_name=tool_name,
             reason=reason, arguments=arguments,
+            file_preview=file_preview,
         )
         database_session.add(approval)
         database_session.flush()

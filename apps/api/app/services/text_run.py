@@ -94,6 +94,7 @@ async def _request_tool_approval(
     call_id: str,
     tool_name: str,
     arguments: dict[str, object],
+    file_preview: dict[str, object] | None = None,
 ) -> bool:
     approval = approval_coordinator.open(
         database_session,
@@ -102,6 +103,7 @@ async def _request_tool_approval(
         tool_name=tool_name,
         reason=f'Tool "{tool_name}" requires explicit user approval.',
         arguments=arguments,
+        file_preview=file_preview,
     )
 
     database_session.commit()
@@ -503,6 +505,7 @@ async def execute_text_run(
                         async def request_approval(
                             tool_name: str,
                             arguments: dict[str, object],
+                            file_preview: dict[str, object] | None,
                         ) -> bool:
                             return await _request_tool_approval(
                                 database_session,
@@ -511,6 +514,7 @@ async def execute_text_run(
                                 call_id=tool_call.call_id,
                                 tool_name=tool_name,
                                 arguments=arguments,
+                                file_preview=file_preview,
                             )
 
                         approval_handler = request_approval

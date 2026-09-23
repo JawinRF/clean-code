@@ -1,0 +1,9 @@
+.approval-diff { overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 8px; }
+.approval-diff-summary { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; font-size: 12px; background: rgba(255, 255, 255, .035); }
+.approval-diff-summary span { color: var(--text-muted); white-space: nowrap; }
+.approval-diff-endings { margin: 0; padding: 7px 12px; font-size: 11px; color: var(--text-muted); }
+.approval-diff-content { margin: 0; max-height: 340px; overflow: auto; padding: 8px 0; font: 12px/1.6 var(--font-mono, monospace); tab-size: 4; }
+.approval-diff-line { display: block; min-width: max-content; padding: 0 12px; white-space: pre; }
+.approval-diff-line--addition { background: rgba(93, 181, 130, .12); color: #b5e3c7; }
+.approval-diff-line--deletion { background: rgba(214, 108, 108, .12); color: #efbbbb; }
+.approval-diff-line--header { color: var(--text-muted); background: rgba(255, 255, 255, .025); }

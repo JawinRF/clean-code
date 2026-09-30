@@ -588,7 +588,7 @@ def list_agent_sessions(
 
     statement = (
         select(AgentSession)
-        .where(AgentSession.workspace_id == workspace_id)
+        .where(AgentSession.workspace_id == workspace_id, AgentSession.parent_session_id.is_(None))
         .order_by(AgentSession.created_at.desc())
     )
 
@@ -684,6 +684,17 @@ def delete_agent_session(
             detail="Agent session not found.",
         )
 
+    if agent_session.parent_session_id is not None:
+        raise HTTPException(status_code=409, detail="Delete the parent session to remove its worker history.")
+    child_session_ids = select(AgentSession.id).where(
+        AgentSession.parent_session_id == session_id,
+    )
+    active_run = session.scalar(select(AgentRun.id).where(
+        ((AgentRun.session_id == session_id) | AgentRun.session_id.in_(child_session_ids)),
+        AgentRun.status.in_(("queued", "running")),
+    ).limit(1))
+    if active_run is not None:
+        raise HTTPException(status_code=409, detail="Stop active agents before deleting this session.")
     session.delete(agent_session)
     session.commit()
 
@@ -770,6 +781,9 @@ def create_agent_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent session not found.",
         )
+
+    if agent_session.parent_session_id is not None:
+        raise HTTPException(status_code=409, detail="Worker runs are managed by their orchestrator.")
 
     if not model_is_configured(
         load_model_catalog(),
@@ -865,6 +879,15 @@ def get_agent_run(
     return agent_run
 
 
+@app.get("/api/v1/runs/{run_id}/children", response_model=list[AgentRunResponse])
+def list_child_runs(run_id: UUID, session: DatabaseSession) -> list[AgentRun]:
+    if session.get(AgentRun, run_id) is None:
+        raise HTTPException(status_code=404, detail="Agent run not found.")
+    return list(session.scalars(select(AgentRun).where(
+        AgentRun.parent_run_id == run_id,
+    ).order_by(AgentRun.created_at, AgentRun.id)))
+
+
 @app.get(
     "/api/v1/runs/{run_id}/events",
     response_model=list[RunEventResponse],
@@ -903,6 +926,7 @@ async def list_pending_tool_approvals(
     session: DatabaseSession,
     approvals: ToolApprovals,
     include_resolved: bool = False,
+    include_children: bool = False,
 ) -> list[ToolApprovalRequest]:
     agent_run = session.get(AgentRun, run_id)
 
@@ -912,7 +936,9 @@ async def list_pending_tool_approvals(
             detail="Agent run not found.",
         )
 
-    return approvals.pending_for_run(session, run_id, include_resolved=include_resolved)
+    return approvals.pending_for_run(
+        session, run_id, include_resolved=include_resolved, include_children=include_children,
+    )
 
 
 @app.post(
@@ -942,6 +968,7 @@ async def decide_tool_approval(
             decision=payload.decision,
         )
         session.commit()
+        approvals.notify_decision(approval_id)
     except ToolApprovalNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -974,6 +1001,9 @@ async def execute_agent_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent run not found.",
         )
+
+    if agent_run.parent_run_id is not None:
+        raise HTTPException(status_code=409, detail="Worker runs are managed by their orchestrator.")
 
     if agent_run.status != "queued":
         raise HTTPException(

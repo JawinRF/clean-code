@@ -58,6 +58,13 @@ class AgentRun(Base):
         ),
         nullable=False,
     )
+    parent_run_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("runs.id", name="fk_runs_parent_run_id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    agent_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
     trigger_message_id: Mapped[UUID | None] = mapped_column(
         Uuid,
         ForeignKey(

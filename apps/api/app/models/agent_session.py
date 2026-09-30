@@ -29,6 +29,12 @@ class AgentSession(Base):
         ),
         nullable=False,
     )
+    parent_session_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("agent_sessions.id", name="fk_agent_sessions_parent_session_id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(
         String(160),
         nullable=False,

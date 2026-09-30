@@ -15,6 +15,9 @@ from app.services.text_run import (
 )
 from app.services.tool_approval import ToolApprovalCoordinator
 from app.services.run_recovery import interrupt_agent_run
+from app.services.orchestration import SubagentOrchestrator
+from app.settings import settings
+from app.tools.delegate_tasks import DelegateTasksTool
 
 
 logger = logging.getLogger(__name__)
@@ -47,6 +50,13 @@ class RunTaskSupervisor:
             approval_coordinator or ToolApprovalCoordinator(session_factory=session_factory)
         )
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
+        self._orchestrator = SubagentOrchestrator(
+            session_factory=session_factory, adapter_factory=adapter_factory,
+            approval_coordinator=self._approval_coordinator,
+            concurrency=settings.subagent_concurrency,
+            max_per_run=settings.subagent_max_per_run,
+            timeout_seconds=settings.subagent_timeout_seconds,
+        )
         self._closed = False
 
     @property
@@ -111,7 +121,7 @@ class RunTaskSupervisor:
         task = self._tasks.get(run_id)
 
         if task is None or task.done():
-            return False
+            return self._orchestrator.cancel(run_id)
 
         return task.cancel()
 
@@ -151,6 +161,7 @@ class RunTaskSupervisor:
                     system=system,
                     adapter_factory=self._adapter_factory,
                     approval_coordinator=self._approval_coordinator,
+                    delegation_tool=DelegateTasksTool(orchestrator=self._orchestrator, parent_run_id=run_id),
                 )
             except TextRunExecutionError:
                 return

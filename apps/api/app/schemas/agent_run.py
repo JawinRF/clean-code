@@ -43,6 +43,8 @@ class AgentRunResponse(BaseModel):
 
     id: UUID
     session_id: UUID
+    parent_run_id: UUID | None
+    agent_label: str | None
     trigger_message_id: UUID | None
     status: RunStatus
     model_provider: str

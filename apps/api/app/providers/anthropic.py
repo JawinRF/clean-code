@@ -77,15 +77,21 @@ def _to_anthropic_messages(
 
 
 class AnthropicAdapter:
-    def __init__(self, *, api_key: str) -> None:
+    def __init__(
+        self, *, api_key: str, provider_id: str = "anthropic",
+        base_url: str = "https://api.anthropic.com",
+        disable_thinking: bool = False,
+    ) -> None:
         if not api_key.strip():
             raise ValueError("Anthropic API key must not be empty.")
 
-        self._client = AsyncAnthropic(api_key=api_key)
+        self._provider_id = provider_id
+        self._disable_thinking = disable_thinking
+        self._client = AsyncAnthropic(api_key=api_key, base_url=base_url)
 
     @property
     def provider_id(self) -> str:
-        return "anthropic"
+        return self._provider_id
 
     async def stream(
         self,
@@ -108,6 +114,7 @@ class AnthropicAdapter:
             max_tokens=request.max_output_tokens,
             system=request.system if request.system is not None else omit,
             tools=tools if tools else omit,
+            thinking={"type": "disabled"} if self._disable_thinking else omit,
         ) as stream:
             async for event in stream:
                 if (
@@ -151,6 +158,12 @@ class AnthropicAdapter:
 
         yield ResponseCompleted(
             stop_reason=final_message.stop_reason,
+            input_tokens=(
+                final_message.usage.input_tokens
+                + (final_message.usage.cache_creation_input_tokens or 0)
+                + (final_message.usage.cache_read_input_tokens or 0)
+            ),
+            output_tokens=final_message.usage.output_tokens,
         )
 
     async def close(self) -> None:

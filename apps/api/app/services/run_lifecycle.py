@@ -42,6 +42,13 @@ def request_run_cancellation(
 
     requested_at = datetime.now(UTC)
     agent_run.cancel_requested_at = requested_at
+    # Persist child cancellation before cancelling asyncio tasks, so their cleanup
+    # records user cancellation rather than an unexpected runtime interruption.
+    children = list(database_session.scalars(select(AgentRun.id).where(
+        AgentRun.parent_run_id == run_id, AgentRun.status.in_(("queued", "running")),
+    ).order_by(AgentRun.id)))
+    for child_id in children:
+        request_run_cancellation(database_session, run_id=child_id)
     resolve_run_approvals(database_session, run_id=run_id, outcome="cancelled")
 
     if agent_run.status == "queued":

@@ -66,6 +66,7 @@ from app.services.tool_approval import (
     resolve_run_approvals,
 )
 from app.tools import ToolRegistry, create_default_tool_registry
+from app.tools.base import AgentTool
 
 
 AdapterFactory = Callable[[str], LlmAdapter]
@@ -307,6 +308,7 @@ async def execute_text_run(
     adapter_factory: AdapterFactory = create_llm_adapter,
     tool_registry: ToolRegistry | None = None,
     approval_coordinator: ToolApprovalCoordinator | None = None,
+    delegation_tool: AgentTool | None = None,
 ) -> Message:
     if max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be greater than zero.")
@@ -331,6 +333,8 @@ async def execute_text_run(
         registry = tool_registry or create_default_tool_registry(
             workspace_root=workspace.root_path,
         )
+        if delegation_tool is not None and agent_run.parent_run_id is None:
+            registry.register(delegation_tool)
         run_messages = load_run_messages(
             database_session,
             agent_run=agent_run,
@@ -420,6 +424,8 @@ async def execute_text_run(
                         "step": step,
                         "stop_reason": provider_step.completion.stop_reason,
                         "tool_call_count": len(provider_step.tool_calls),
+                        "input_tokens": provider_step.completion.input_tokens,
+                        "output_tokens": provider_step.completion.output_tokens,
                     },
                 )
                 database_session.commit()

@@ -74,6 +74,8 @@ class ToolCallDelta:
 @dataclass(frozen=True, slots=True)
 class ResponseCompleted:
     stop_reason: str | None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     type: Literal["response.completed"] = field(
         default="response.completed",
         init=False,

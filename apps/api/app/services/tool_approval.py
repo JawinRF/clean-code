@@ -72,6 +72,7 @@ class ToolApprovalCoordinator:
         session_factory: DatabaseSessionFactory = SessionFactory,
     ) -> None:
         self._session_factory = session_factory
+        self._decisions: dict[UUID, asyncio.Event] = {}
 
     def open(
         self,
@@ -110,21 +111,32 @@ class ToolApprovalCoordinator:
         return approval
 
     async def wait(self, approval_id: UUID) -> ToolApprovalDecision:
-        while True:
-            with self._session_factory() as database_session:
-                approval = database_session.get(ToolApproval, approval_id)
-                if approval is None:
-                    raise ToolApprovalNotFoundError
-                outcome = approval.status
+        decision_event = self._decisions.setdefault(approval_id, asyncio.Event())
+        try:
+            while True:
+                decision_event.clear()
+                with self._session_factory() as database_session:
+                    approval = database_session.get(ToolApproval, approval_id)
+                    if approval is None:
+                        raise ToolApprovalNotFoundError
+                    outcome = approval.status
 
-            if outcome == "approved":
-                return "approved"
-            if outcome == "rejected":
-                return "rejected"
-            if outcome != "pending":
-                raise asyncio.CancelledError
-            # Release the connection and transaction before waiting for a committed decision.
-            await asyncio.sleep(0.25)
+                if outcome == "approved":
+                    return "approved"
+                if outcome == "rejected":
+                    return "rejected"
+                if outcome != "pending":
+                    raise asyncio.CancelledError
+                # Subscribe before reading; no DB connection is held while asleep.
+                await decision_event.wait()
+        finally:
+            self._decisions.pop(approval_id, None)
+
+    def notify_decision(self, approval_id: UUID) -> None:
+        """Wake a waiter only AFTER the API transaction commits its decision."""
+        decision_event = self._decisions.get(approval_id)
+        if decision_event is not None:
+            decision_event.set()
 
     def decide(
         self,
@@ -160,8 +172,12 @@ class ToolApprovalCoordinator:
 
     def pending_for_run(
         self, database_session: Session, run_id: UUID, *, include_resolved: bool = False,
+        include_children: bool = False,
     ) -> list[ToolApproval]:
-        statement = select(ToolApproval).where(ToolApproval.run_id == run_id)
+        run_ids = select(AgentRun.id).where(
+            (AgentRun.id == run_id) | (AgentRun.parent_run_id == run_id)
+        ) if include_children else [run_id]
+        statement = select(ToolApproval).where(ToolApproval.run_id.in_(run_ids))
         if not include_resolved:
             statement = statement.where(ToolApproval.status == "pending")
         return list(database_session.scalars(

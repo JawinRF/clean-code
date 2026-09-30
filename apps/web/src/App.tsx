@@ -32,6 +32,7 @@ import { ConversationSearchBar } from './components/ConversationSearchBar';
 import { GlobalSearchDialog } from './components/GlobalSearchDialog';
 import { ChangesPanel } from './components/ChangesView';
 import { InterruptedRunPanel, type InterruptedRun } from './components/InterruptedRunPanel';
+import { SubagentPanel } from './components/SubagentPanel';
 import { highlightMatch } from './utils/highlightMatch';
 import { messageSearchText } from './utils/transcriptSearch';
 import {
@@ -274,6 +275,7 @@ function approvalTargetPath(approval: ToolApprovalResponse): string | null {
 
 function ApprovalPanel({
   approval,
+  workerLabel,
   answeringDecision,
   isStopping,
   error,
@@ -281,6 +283,7 @@ function ApprovalPanel({
   onStop,
 }: {
   approval: ToolApprovalResponse;
+  workerLabel?: string;
   answeringDecision: ToolApprovalDecision | null;
   isStopping: boolean;
   error: string | null;
@@ -295,7 +298,7 @@ function ApprovalPanel({
       <div className="approval-strip">
         <span className="approval-strip-label">
           <span className="approval-dot" />
-          Waiting for approval
+          {workerLabel ? `Approval for ${workerLabel}` : 'Waiting for approval'}
         </span>
         <button
           type="button"
@@ -479,6 +482,9 @@ function App() {
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [activeTurn, setActiveTurn] = useState<ActiveTurn | null>(null);
   const [runEvents, setRunEvents] = useState<RunEventResponse[]>([]);
+  const [childRuns, setChildRuns] = useState<{
+    sessionId: string; runs: AgentRunResponse[];
+  } | null>(null);
   const [pendingToolApprovals, setPendingToolApprovals] = useState<ToolApprovalResponse[]>([]);
   const [answeringApproval, setAnsweringApproval] = useState<{
     id: string;
@@ -903,6 +909,7 @@ function App() {
 
   useEffect(() => {
     setMessages([]);
+    setChildRuns(null);
     setInterruptedRun(null);
     if (activeTurnRef.current === null) {
       setRunEvents([]);
@@ -947,9 +954,16 @@ function App() {
           : `${data.length} message${data.length === 1 ? '' : 's'} loaded`,
       );
       const latestRun = runs[0];
+      if (latestRun !== undefined) {
+        const children = await getApiJson<AgentRunResponse[]>(
+          `/api/v1/runs/${latestRun.id}/children`, controller.signal,
+        );
+        if (!active) return;
+        setChildRuns({ sessionId: selectedSessionId, runs: children });
+      }
       if (latestRun?.status === 'interrupted') {
         const approvals = await getApiJson<ToolApprovalResponse[]>(
-          `/api/v1/runs/${latestRun.id}/approvals?include_resolved=true`, controller.signal,
+          `/api/v1/runs/${latestRun.id}/approvals?include_resolved=true&include_children=true`, controller.signal,
         );
         if (active) {
           setInterruptedRun({ run: latestRun, approvals });
@@ -1061,7 +1075,7 @@ function App() {
       );
 
       try {
-        const [run, events, approvals] = await Promise.all([
+        const [run, events, approvals, children] = await Promise.all([
           getApiJson<AgentRunResponse>(
             `/api/v1/runs/${activeTurn.runId}`,
             requestController.signal,
@@ -1071,13 +1085,17 @@ function App() {
             requestController.signal,
           ),
           getApiJson<ToolApprovalResponse[]>(
-            `/api/v1/runs/${activeTurn.runId}/approvals?include_resolved=true`,
+            `/api/v1/runs/${activeTurn.runId}/approvals?include_resolved=true&include_children=true`,
             requestController.signal,
+          ),
+          getApiJson<AgentRunResponse[]>(
+            `/api/v1/runs/${activeTurn.runId}/children`, requestController.signal,
           ),
         ]);
 
         if (!active) return;
 
+        setChildRuns({ sessionId: activeTurn.sessionId, runs: children });
         applyEventPage(events);
         let hasMoreEvents = events.length === RUN_EVENT_PAGE_SIZE;
         const runFinished = TERMINAL_RUN_STATUSES.has(run.status);
@@ -1089,6 +1107,11 @@ function App() {
           if (!active) return;
           applyEventPage(finalEvents);
           hasMoreEvents = finalEvents.length === RUN_EVENT_PAGE_SIZE;
+          const finalChildren = await getApiJson<AgentRunResponse[]>(
+            `/api/v1/runs/${activeTurn.runId}/children`, requestController.signal,
+          );
+          if (!active) return;
+          setChildRuns({ sessionId: activeTurn.sessionId, runs: finalChildren });
         }
         const pendingApprovals = approvals.filter((approval) => approval.status === 'pending');
         setPendingToolApprovals(pendingApprovals);
@@ -1168,7 +1191,9 @@ function App() {
               ? 'Waiting for approval...'
               : run.status === 'queued'
                 ? 'Starting...'
-                : 'Generating...',
+                : children.some((child) => child.status === 'queued' || child.status === 'running')
+                  ? 'Workers running · parent waiting...'
+                  : 'Generating...',
         );
         schedulePoll(hasMoreEvents ? 0 : 300);
       } catch (error) {
@@ -1801,7 +1826,7 @@ function App() {
 
       if (run?.status === 'interrupted') {
         const approvals = await getApiJson<ToolApprovalResponse[]>(
-          `/api/v1/runs/${run.id}/approvals?include_resolved=true`, controller.signal,
+          `/api/v1/runs/${run.id}/approvals?include_resolved=true&include_children=true`, controller.signal,
         );
         if (selectedSessionIdRef.current === run.session_id) setInterruptedRun({ run, approvals });
         setTurnStatus('Run interrupted');
@@ -1901,7 +1926,7 @@ function App() {
 
     try {
       await postApi(
-        `/api/v1/runs/${activeTurn.runId}/approvals/${approval.id}`,
+        `/api/v1/runs/${approval.run_id}/approvals/${approval.id}`,
         { decision },
         controller.signal,
       );
@@ -2717,12 +2742,17 @@ function App() {
         )}
 
         <footer className="composer-wrap">
+          {childRuns?.sessionId === selectedSessionId && (
+            <SubagentPanel runs={childRuns.runs}
+              approvalRunIds={new Set(pendingToolApprovals.map((approval) => approval.run_id))} />
+          )}
           {interruptedRun !== null && interruptedRun.run.session_id === selectedSessionId && (
             <InterruptedRunPanel recovery={interruptedRun} />
           )}
           {pendingApproval !== null ? (
             <ApprovalPanel
               approval={pendingApproval}
+              workerLabel={childRuns?.runs.find((run) => run.id === pendingApproval.run_id)?.agent_label ?? undefined}
               answeringDecision={answeringDecision}
               isStopping={isStopping}
               error={approvalError}

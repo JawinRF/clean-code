@@ -16,6 +16,22 @@
           "context_window": 200000
         }
       ]
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "models": [
+        {
+          "id": "deepseek-flash",
+          "label": "DeepSeek Flash",
+          "context_window": 1000000
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "DeepSeek V4 Pro",
+          "context_window": 1000000
+        }
+      ]
     }
   ]
 }

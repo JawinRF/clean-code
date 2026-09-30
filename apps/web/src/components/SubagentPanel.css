@@ -1,0 +1,53 @@
+.subagent-panel {
+  margin-bottom: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+.subagent-panel > header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.subagent-panel > header span, .subagent-model { color: var(--text-muted); }
+.subagent-list { max-height: min(36vh, 340px); overflow-y: auto; }
+.subagent-worker { padding: 8px 12px; }
+.subagent-worker + .subagent-worker { border-top: 1px solid var(--border-subtle); }
+.subagent-worker-heading { display: flex; align-items: center; gap: 8px; }
+.subagent-expand {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 8px;
+  padding: 3px 0;
+  border: 0;
+  color: var(--text-primary);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.subagent-expand strong { overflow-wrap: anywhere; }
+.subagent-state { color: var(--text-muted); font-size: 11px; }
+.subagent-worker[data-status="completed"] .subagent-state { color: var(--success); }
+.subagent-worker[data-status="failed"] .subagent-state, .subagent-error { color: var(--danger); }
+.subagent-worker[data-status="interrupted"] .subagent-state { color: var(--warning); }
+.subagent-stop {
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  background: var(--surface-input);
+  cursor: pointer;
+}
+.subagent-stop:disabled { opacity: 0.5; cursor: default; }
+.subagent-model { padding-left: 17px; overflow-wrap: anywhere; }
+.subagent-report { padding-top: 10px; overflow-wrap: anywhere; }
+.subagent-report details { margin-bottom: 10px; }
+.subagent-report details p { margin-top: 6px; white-space: pre-wrap; }
+.subagent-report summary { cursor: pointer; }

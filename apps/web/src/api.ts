@@ -52,6 +52,8 @@ export type AgentRunStatus =
 export type AgentRunResponse = {
   id: string;
   session_id: string;
+  parent_run_id: string | null;
+  agent_label: string | null;
   trigger_message_id: string | null;
   status: AgentRunStatus;
   model_provider: string;

@@ -35,7 +35,11 @@ class WriteFileTool:
     def __init__(self, *, workspace_root: str | Path) -> None:
         self._workspace_root = Path(workspace_root).resolve(strict=True)
 
-    async def execute(self, arguments: BaseModel) -> ToolResult:
+    @property
+    def workspace_root(self) -> Path:
+        return self._workspace_root
+
+    async def execute(self, arguments: BaseModel, *, expected_path: str | None = None) -> ToolResult:
         if not isinstance(arguments, WriteFileInput):
             raise TypeError(
                 "WriteFileTool requires WriteFileInput arguments."
@@ -46,11 +50,17 @@ class WriteFileTool:
                 self._workspace_root,
                 arguments.path,
             )
+
+            if expected_path is not None and target.relative_to(self._workspace_root).as_posix() != expected_path:
+                return ToolResult("Workspace path changed since the approval preview. Request a new approval.", True)
             target.parent.mkdir(parents=True, exist_ok=True)
             target = resolve_workspace_write_path(
                 self._workspace_root,
                 arguments.path,
             )
+
+            if expected_path is not None and target.relative_to(self._workspace_root).as_posix() != expected_path:
+                return ToolResult("Workspace path changed since the approval preview. Request a new approval.", True)
 
             with target.open(
                 "x",

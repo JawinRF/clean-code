@@ -35,6 +35,7 @@ class ToolApproval(Base):
     tool_name: Mapped[str] = mapped_column(String(120), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     arguments: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    file_preview: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), server_default=text("'pending'"), nullable=False,
     )

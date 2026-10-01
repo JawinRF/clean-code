@@ -83,6 +83,15 @@ export type ToolApprovalResponse = {
   tool_name: string;
   reason: string;
   arguments: Record<string, unknown>;
+  file_preview?: {
+    path: string;
+    unified_diff: string;
+    additions: number;
+    deletions: number;
+    before_line_endings: string;
+    after_line_endings: string;
+    original_sha256: string | null;
+  } | null;
   requested_at: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'interrupted';
   resolved_at: string | null;

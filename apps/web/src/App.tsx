@@ -33,6 +33,7 @@ import { GlobalSearchDialog } from './components/GlobalSearchDialog';
 import { ChangesPanel } from './components/ChangesView';
 import { InterruptedRunPanel, type InterruptedRun } from './components/InterruptedRunPanel';
 import { SubagentPanel } from './components/SubagentPanel';
+import { ApprovalDiff } from './components/ApprovalDiff';
 import { highlightMatch } from './utils/highlightMatch';
 import { messageSearchText } from './utils/transcriptSearch';
 import {
@@ -292,6 +293,8 @@ function ApprovalPanel({
 }) {
   const targetPath = approvalTargetPath(approval);
   const isAnswering = answeringDecision !== null;
+  const isFileChange = approval.tool_name === 'edit_file' || approval.tool_name === 'write_file';
+  const missingPreview = isFileChange && !approval.file_preview;
 
   return (
     <section className="approval-panel" aria-labelledby="approval-title">
@@ -326,13 +329,20 @@ function ApprovalPanel({
         {targetPath !== null && (
           <code className="approval-target">{targetPath}</code>
         )}
-        <pre
-          className="approval-arguments"
-          tabIndex={0}
-          aria-label="Exact tool arguments"
-        >
-          {JSON.stringify(approval.arguments, null, 2)}
-        </pre>
+        {approval.file_preview && <ApprovalDiff preview={approval.file_preview} />}
+        {missingPreview && <p className="approval-error" role="alert">
+          This file change has no saved diff. Reject it and request a new change to review before approving.
+        </p>}
+        <details open={!isFileChange}>
+          <summary>Exact tool arguments</summary>
+          <pre
+            className="approval-arguments"
+            tabIndex={0}
+            aria-label="Exact tool arguments"
+          >
+            {JSON.stringify(approval.arguments, null, 2)}
+          </pre>
+        </details>
         {error !== null && (
           <p className="approval-error" role="alert">{error}</p>
         )}
@@ -353,12 +363,12 @@ function ApprovalPanel({
           type="button"
           className="button button--primary approval-allow"
           onClick={() => onDecision('approved')}
-          disabled={isAnswering || isStopping}
+          disabled={isAnswering || isStopping || missingPreview}
         >
           {answeringDecision === 'approved'
             ? <span className="button-spinner" />
             : <Icon name="check" size={13} />}
-          Allow once
+          Approve
         </button>
       </div>
     </section>

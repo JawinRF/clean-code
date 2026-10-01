@@ -9,6 +9,7 @@ from app.tools.list_files import ListFilesTool
 from app.tools.search_files import SearchFilesTool
 from app.tools.shell import ShellTool
 from app.tools.write_file import WriteFileTool
+from app.tools.web_search import WebSearchTool
 
 
 class DuplicateToolError(Exception):
@@ -57,7 +58,7 @@ def create_default_tool_registry(
     *,
     workspace_root: str | Path | None = None,
 ) -> ToolRegistry:
-    tools: list[AgentTool] = [EchoTool()]
+    tools: list[AgentTool] = [EchoTool(), WebSearchTool()]
 
     if workspace_root is not None:
         tools.append(ListFilesTool(workspace_root=workspace_root))

@@ -11,6 +11,7 @@ from app.tools.registry import (
 from app.tools.search_files import SearchFilesInput, SearchFilesTool
 from app.tools.shell import ShellInput, ShellTool
 from app.tools.write_file import WriteFileInput, WriteFileTool
+from app.tools.web_search import WebSearchInput, WebSearchTool
 
 __all__ = [
     "AgentTool",
@@ -30,5 +31,7 @@ __all__ = [
     "UnknownToolError",
     "WriteFileInput",
     "WriteFileTool",
+    "WebSearchInput",
+    "WebSearchTool",
     "create_default_tool_registry",
 ]
